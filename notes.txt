@@ -1,0 +1,20 @@
+I want to create a Dashboard/portal sort of a design with the theme as white,red and black.
+The Portal is about BOM of On2Cook Device. The Interface should be in a way where I can see Individual Parts (with part number(unique), part name,part desc, hsn code, part type, rework required,material, vendor currency (unit rate), qty, uom, total unit cost (o2c unit cost), custom duty, surcharge % and duty% , total freight, total unit landed cost (per unit),supplier name, countrty, lead time,) so i should be able to filter anything and also I should be able to search anything by part number or Part name. I also should be able to see whether that part is part of which sub-assemblies and total of those too as in if a 25 screws are required i need the breakdown where in I can see 10 screws for sub-assembly 1 and 10 screws for sub-assembly 5 and 5 needed as individual parts. I need these in the outer view but in a hidden expandable way.
+
+I need to know the urgency of parts according to the lead time (the hightest lead time is the most critical case)
+
+I also need a option where I can upload my excel file which is my sheet with different tabs:
+the tabs are such where first tab is for Unique Part Number with columns: Part Number	Part Name	Quantity and other tabs are sub-assemblies tabs such as :O2C-EC-SA-001 with columns Finalized	S.No.	Photo	Part Number	Part Name	Part Description	HSN Code	Part Type	Rework Required	Rework Drawing Reference	Part Sub-Category	Part Category	Material of Construction	Revision No.	Quantity	Unit of Measurement
+
+
+Also, the website should have 1 html page and other js pages (whenever required)
+
+There is 2-3 more issues which needs to be addressed which are: 
+One is I want that when I upload my excel this gets saved to a DB. this is the BOM of making 1 single unit. Later we'll match it with Inventory store and production line. we have to make 250 units in the production line so whether taht is possible or not? also and then seeing if yes then if we have smtg excess (return it to the store) and if we smtg required borrow it from the store. The store has how much details. That part is still pending but I need a system where I can upload multiple files for each system which is BOM for 1 device, production and store and I need this upload feature to be hidden and not visible to all. and I dont want this sample data thing to be visible
+
+
+The other task is that we need to have a calculation of the Inventory Value and if we can make 250 sets  of the device in th
+
+
+So, I need 1 filter where in I can filter my bom as country and add a particular cost of that cuurency and it reflects for thos eparts similarly for other countries.
+and i need an export mode in all files (bom, store and production)

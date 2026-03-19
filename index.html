@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>On2Cook — BOM Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;1,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root{--red:#D10000;--red-dark:#9B0000;--red-faint:#FFF3F3;--black:#111111;--black-2:#1E1E1E;--black-3:#2D2D2D;--white:#FFFFFF;--gray-1:#F4F4F4;--gray-2:#E6E6E6;--gray-3:#CCCCCC;--gray-4:#999999;--gray-5:#666666;--c-ok:#1A7A1A;--c-ok-bg:#EAFBEA;--c-ok-br:#A0E0A0;--c-def:#C80000;--c-def-bg:#FFEAEA;--c-def-br:#FFBBBB;--c-exc:#0060A0;--c-exc-bg:#EAF3FF;--c-exc-br:#AACCFF;--c-crit:#C80000;--c-high:#D46000;--c-med:#B89000;--c-low:#2A7D2A;--font-h:'Barlow Condensed',sans-serif;--font-mono:'IBM Plex Mono',monospace;--font-body:'IBM Plex Sans',sans-serif;--sh-sm:0 1px 4px rgba(0,0,0,.08);--sh-md:0 4px 16px rgba(0,0,0,.13)}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:var(--font-body);background:var(--gray-1);color:var(--black);min-height:100vh}
+    button{cursor:pointer;font-family:inherit;border:none}
+    select,input{font-family:inherit}
+
+    /* HEADER */
+    .header{background:var(--black);color:white;height:62px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:3px solid var(--red);position:sticky;top:0;z-index:200;box-shadow:var(--sh-md)}
+    .hd-left{display:flex;align-items:center;gap:14px}
+    .logo-block{width:38px;height:38px;background:var(--red);display:flex;align-items:center;justify-content:center;font-family:var(--font-h);font-size:17px;font-weight:800;color:white;letter-spacing:-1px;cursor:pointer;user-select:none;transition:transform .12s,box-shadow .2s;flex-shrink:0}
+    .logo-block:active{transform:scale(.88)}
+    .logo-block.tap-flash{box-shadow:0 0 0 5px rgba(209,0,0,.45)}
+    .brand-name{font-family:var(--font-h);font-size:23px;font-weight:800;letter-spacing:1.5px;line-height:1}
+    .brand-name em{color:var(--red);font-style:normal}
+    .brand-sub{font-size:9.5px;letter-spacing:2.5px;text-transform:uppercase;color:var(--gray-4);margin-top:3px}
+    .db-pill{display:flex;align-items:center;gap:6px;padding:5px 13px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);font-family:var(--font-mono);font-size:10.5px;color:var(--gray-4)}
+    .db-dot{width:6px;height:6px;border-radius:50%;background:var(--gray-4);flex-shrink:0;transition:background .3s}
+    .db-dot.green{background:#4CAF50;box-shadow:0 0 5px #4CAF5070}
+    .db-dot.yellow{background:#FFC107}
+
+    /* TABS */
+    .tab-bar{background:var(--black-2);display:flex;align-items:flex-end;padding:0 28px;border-bottom:2px solid var(--red);gap:2px;overflow-x:auto}
+    .tab-btn{padding:11px 22px 12px;font-family:var(--font-h);font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:transparent;color:var(--gray-4);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s;display:flex;align-items:center;gap:7px;white-space:nowrap;flex-shrink:0}
+    .tab-btn:hover{color:var(--gray-2)}
+    .tab-btn.active{color:white;border-bottom-color:var(--red)}
+    .tab-btn svg{width:14px;height:14px}
+
+    /* BUTTONS */
+    .btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;font-family:var(--font-h);font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;transition:all .15s;line-height:1}
+    .btn svg{width:14px;height:14px;flex-shrink:0}
+    .btn-red{background:var(--red);color:white}.btn-red:hover{background:var(--red-dark)}
+    .btn-outline{background:transparent;color:var(--black-3);border:1.5px solid var(--gray-3)}.btn-outline:hover{border-color:var(--black);background:var(--gray-2)}
+    .btn-sm{padding:6px 13px;font-size:11px}
+    .btn-danger{background:#8B0000;color:white}.btn-danger:hover{background:#6A0000}
+
+    /* LAYOUT */
+    .main{padding:22px 28px}
+    .tab-panel{display:none}.tab-panel.active{display:block}
+
+    /* STAT CARDS */
+    .stats-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px}
+    .stat-card{background:white;border:1px solid var(--gray-2);padding:18px 20px 16px;position:relative;overflow:hidden;box-shadow:var(--sh-sm)}
+    .stat-card::after{content:'';position:absolute;left:0;top:0;bottom:0;width:4px}
+    .stat-card.s-total::after{background:var(--black)}
+    .stat-card.s-crit::after{background:var(--c-crit)}
+    .stat-card.s-high::after{background:var(--c-high)}
+    .stat-card.s-sub::after{background:var(--gray-4)}
+    .stat-card.s-vendor::after{background:var(--gray-4)}
+    .sc-label{font-size:9.5px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--gray-4);margin-bottom:7px}
+    .sc-value{font-family:var(--font-h);font-size:40px;font-weight:800;line-height:1;color:var(--black)}
+    .s-crit .sc-value{color:var(--c-crit)}.s-high .sc-value{color:var(--c-high)}
+    .sc-sub{font-size:11px;color:var(--gray-4);margin-top:5px}
+
+    /* TOOLBAR */
+    .toolbar{background:white;border:1px solid var(--gray-2);padding:13px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;box-shadow:var(--sh-sm)}
+    .search-wrap{position:relative;flex:1;min-width:200px;max-width:300px}
+    .search-wrap svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--gray-4);pointer-events:none}
+    .search-wrap input{width:100%;padding:9px 12px 9px 34px;border:1.5px solid var(--gray-2);font-size:13px;background:var(--gray-1);outline:none;transition:border-color .15s,background .15s}
+    .search-wrap input:focus{border-color:var(--red);background:white}
+    .search-wrap input::placeholder{color:var(--gray-4)}
+    .tb-div{width:1px;height:30px;background:var(--gray-2)}
+    .filter-sel{padding:9px 12px;border:1.5px solid var(--gray-2);font-size:12px;background:var(--gray-1);outline:none;cursor:pointer;min-width:120px;transition:border-color .15s}
+    .filter-sel:focus{border-color:var(--red)}
+    .active-count{font-family:var(--font-mono);font-size:11px;color:var(--gray-5);margin-left:auto}
+    .active-count strong{color:var(--red)}
+
+    /* Currency rate panel */
+    .fx-panel{display:none;align-items:center;gap:8px;padding:9px 14px;background:#FFF8E6;border:1.5px solid #E6C84A;flex-wrap:wrap}
+    .fx-panel.visible{display:flex}
+    .fx-label{font-size:11.5px;font-weight:600;color:#7A5A00;white-space:nowrap}
+    .fx-curr{font-family:var(--font-mono);font-size:12px;font-weight:700;color:#7A5A00;background:#FFF0B3;padding:3px 8px;border:1px solid #E6C84A}
+    .fx-input{width:110px;padding:7px 10px;border:1.5px solid #E6C84A;font-family:var(--font-mono);font-size:13px;font-weight:700;background:white;outline:none;text-align:center}
+    .fx-input:focus{border-color:var(--red)}
+    .fx-affected{font-size:11px;color:#7A5A00}
+    .fx-clear{padding:5px 11px;background:transparent;border:1px solid #B89000;color:#7A5A00;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font-body)}
+    .fx-clear:hover{background:#B89000;color:white}
+    .fx-badge{display:inline-block;padding:1px 6px;background:#E6C84A;color:#5A4400;font-family:var(--font-mono);font-size:10px;font-weight:700;margin-left:4px;vertical-align:middle}
+
+    /* Export button */
+    .btn-export{background:white;color:var(--black-3);border:1.5px solid var(--gray-3);display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-family:var(--font-h);font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;transition:all .15s}
+    .btn-export:hover{background:var(--black);color:white;border-color:var(--black)}
+    .btn-export svg{width:13px;height:13px;flex-shrink:0}
+
+    /* TABLE */
+    .table-card{background:white;border:1px solid var(--gray-2);box-shadow:var(--sh-sm);overflow:hidden}
+    .tc-header{display:flex;align-items:center;justify-content:space-between;padding:13px 20px;background:var(--black-2);border-bottom:2px solid var(--red)}
+    .tc-title{font-family:var(--font-h);font-size:17px;font-weight:700;color:white;letter-spacing:1.5px;text-transform:uppercase}
+    .tc-meta{font-family:var(--font-mono);font-size:11px;color:var(--gray-4)}
+    .tbl-scroll{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 320px)}
+    table{width:100%;border-collapse:collapse;font-size:12.5px}
+    thead th{background:var(--black-3);color:white;padding:11px 13px;text-align:left;font-family:var(--font-h);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;white-space:nowrap;position:sticky;top:0;z-index:30;border-right:1px solid #3D3D3D;cursor:pointer;user-select:none;transition:background .12s}
+    thead th:hover{background:#404040}
+    thead th.sort-asc::after{content:' ↑';color:var(--red)}
+    thead th.sort-desc::after{content:' ↓';color:var(--red)}
+    thead th.no-sort{cursor:default}
+    .col-expand{position:sticky;left:0;z-index:35;min-width:44px;width:44px}
+    .col-pno{position:sticky;left:44px;z-index:35;min-width:150px}
+    thead .col-expand,thead .col-pno{z-index:40}
+    tbody tr{border-bottom:1px solid var(--gray-2);transition:background .1s}
+    tbody tr:hover>td{background:#FFF7F7 !important}
+    tbody td{padding:10px 13px;vertical-align:middle;white-space:nowrap;border-right:1px solid #EEE}
+    tbody td.col-expand{background:white}
+    tbody td.col-pno{background:white;box-shadow:3px 0 6px -2px rgba(0,0,0,.07)}
+    tbody tr:hover td.col-expand,tbody tr:hover td.col-pno{background:#FFF7F7 !important}
+    tbody tr.row-expanded>td{background:#FFF4F4}
+    tbody tr.row-expanded td.col-expand,tbody tr.row-expanded td.col-pno{background:#FFF0F0 !important}
+    tbody tr[data-urgency="critical"] td.col-expand{border-left:3px solid var(--c-crit)}
+    tbody tr[data-urgency="high"]     td.col-expand{border-left:3px solid var(--c-high)}
+    tbody tr[data-urgency="medium"]   td.col-expand{border-left:3px solid var(--c-med)}
+    tbody tr[data-urgency="low"]      td.col-expand{border-left:3px solid var(--c-low)}
+    .cell-pno{font-family:var(--font-mono);font-size:11.5px;color:var(--red);font-weight:500}
+    .cell-name{font-weight:600}
+    .cell-desc{color:var(--gray-5);max-width:220px;overflow:hidden;text-overflow:ellipsis;display:block}
+    .cell-num{font-family:var(--font-mono);font-size:12px;text-align:right}
+    .tag{display:inline-block;padding:2px 8px;font-family:var(--font-h);font-size:11px;font-weight:600}
+    .tag-type{background:#EEF2FF;color:#3344AA}
+    .tag-rw-yes{background:#FFF0F0;color:var(--red)}
+    .tag-rw-no{background:var(--gray-1);color:var(--gray-4)}
+    .urg{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;font-family:var(--font-h);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+    .urg-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+    .urg-critical{background:#FFEAEA;color:var(--c-crit);border:1px solid #FFBBBB}.urg-critical .urg-dot{background:var(--c-crit)}
+    .urg-high{background:#FFF3EA;color:var(--c-high);border:1px solid #FFD0A0}.urg-high .urg-dot{background:var(--c-high)}
+    .urg-medium{background:#FFFBEA;color:var(--c-med);border:1px solid #FFE97A}.urg-medium .urg-dot{background:var(--c-med)}
+    .urg-low{background:#EAFBEA;color:var(--c-low);border:1px solid #A0E0A0}.urg-low .urg-dot{background:var(--c-low)}
+    .expand-btn{width:26px;height:26px;background:var(--gray-2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--gray-5);transition:all .15s}
+    .expand-btn:hover{background:var(--red);color:white}
+    .expand-btn.open{background:var(--red);color:white;transform:rotate(90deg)}
+    .expand-btn svg{width:12px;height:12px;pointer-events:none}
+    .expansion-row{display:none}
+    .expansion-row.open{display:table-row}
+    .expansion-row>td{padding:0 !important;background:#FDF5F5 !important;border-bottom:2px solid var(--red) !important}
+    .exp-inner{padding:16px 20px 18px 64px;border-top:2px solid var(--red)}
+    .exp-label{font-family:var(--font-h);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--red);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+    .exp-label svg{width:14px;height:14px}
+    .sa-table-wrap{overflow-x:auto}
+    .sa-table{min-width:0 !important;width:auto;border:1px solid var(--gray-2)}
+    .sa-table thead th{background:var(--black-2);font-size:10.5px;padding:7px 11px;letter-spacing:.5px;position:static;z-index:auto}
+    .sa-table tbody td{padding:8px 11px;font-size:12px;background:white;border-right:1px solid var(--gray-2)}
+    .sa-table tbody tr:hover td{background:#FFF7F7 !important}
+    .sa-total-row td{background:#F5F5F5 !important;font-weight:700;border-top:2px solid var(--gray-3);font-family:var(--font-mono);font-size:12px}
+    .sa-badge{display:inline-block;padding:2px 8px;background:var(--black-3);color:white;font-family:var(--font-mono);font-size:10.5px}
+    .sa-ind-badge{display:inline-block;padding:2px 8px;background:#EEF2FF;color:#3344AA;font-family:var(--font-mono);font-size:10.5px}
+    .empty-state{padding:72px 32px;text-align:center}
+    .empty-icon{font-size:56px;opacity:.15;margin-bottom:14px}
+    .empty-title{font-family:var(--font-h);font-size:28px;font-weight:700;color:var(--black-3);margin-bottom:8px}
+    .empty-sub{font-size:13px;color:var(--gray-4)}
+
+    /* PRODUCTION PLANNING */
+    .prod-header{display:flex;align-items:flex-start;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+    .prod-config{background:white;border:1px solid var(--gray-2);padding:20px 24px;flex:1;min-width:270px;box-shadow:var(--sh-sm);border-top:3px solid var(--red)}
+    .prod-config h3{font-family:var(--font-h);font-size:15px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:14px;color:var(--black);border-bottom:1px solid var(--gray-2);padding-bottom:10px;display:flex;align-items:center;gap:7px}
+    .config-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+    .config-label{font-size:12px;font-weight:600;color:var(--gray-5);min-width:130px;letter-spacing:.3px}
+    .config-input{padding:9px 14px;border:1.5px solid var(--gray-2);font-family:var(--font-mono);font-size:15px;font-weight:600;width:110px;outline:none;text-align:center;transition:border-color .15s}
+    .config-input:focus{border-color:var(--red)}
+    .inv-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;font-family:var(--font-h);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+    .inv-pill.loaded{background:var(--c-ok-bg);color:var(--c-ok);border:1px solid var(--c-ok-br)}
+    .inv-pill.not-loaded{background:var(--gray-1);color:var(--gray-4);border:1px solid var(--gray-3)}
+    .inv-value-card{background:white;border:1px solid var(--gray-2);padding:20px 24px;box-shadow:var(--sh-sm);border-top:3px solid var(--c-exc);min-width:200px}
+    .inv-value-label{font-size:9.5px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--gray-4);margin-bottom:6px}
+    .inv-value-total{font-family:var(--font-h);font-size:36px;font-weight:800;color:var(--c-exc);line-height:1}
+    .inv-value-sub{font-size:11px;color:var(--gray-4);margin-top:5px}
+    .feas-banner{background:white;border:1px solid var(--gray-2);padding:20px 24px;min-width:260px;box-shadow:var(--sh-sm)}
+    .feas-result{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+    .feas-icon{font-size:38px;line-height:1}
+    .feas-verdict{font-family:var(--font-h);font-size:26px;font-weight:800;line-height:1;letter-spacing:.5px}
+    .feas-verdict.yes{color:var(--c-ok)}.feas-verdict.no{color:var(--c-def)}
+    .feas-sub{font-size:12px;color:var(--gray-4);margin-top:5px}
+    .feas-pills{display:flex;gap:10px;flex-wrap:wrap}
+    .feas-pill{flex:1;min-width:80px;padding:10px 14px;text-align:center;border:1px solid var(--gray-2)}
+    .feas-pill-val{font-family:var(--font-h);font-size:28px;font-weight:800;line-height:1}
+    .feas-pill-lbl{font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--gray-4);margin-top:4px}
+    .pill-ok .feas-pill-val{color:var(--c-ok)}.pill-def .feas-pill-val{color:var(--c-def)}.pill-exc .feas-pill-val{color:var(--c-exc)}
+    .prod-table-card{background:white;border:1px solid var(--gray-2);box-shadow:var(--sh-sm);overflow:hidden;margin-top:18px}
+    .prod-tbl-scroll{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 430px)}
+    .prod-tbl{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1500px}
+    .prod-tbl thead th{background:var(--black-3);color:white;padding:11px 14px;font-family:var(--font-h);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;white-space:nowrap;position:sticky;top:0;z-index:30;border-right:1px solid #3D3D3D;cursor:default}
+    .prod-tbl tbody td{padding:10px 14px;border-bottom:1px solid var(--gray-2);border-right:1px solid #EEE;vertical-align:middle}
+    .prod-tbl tbody tr:hover td{background:#F8FAFE}
+    .prod-tbl tbody tr[data-pstatus="deficit"]:hover td{background:#FFF5F5}
+    .prod-tbl tbody tr[data-pstatus="excess"]:hover td{background:#F0F7FF}
+    .status-ok{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;background:var(--c-ok-bg);color:var(--c-ok);border:1px solid var(--c-ok-br);font-family:var(--font-h);font-size:11px;font-weight:700;letter-spacing:.5px}
+    .status-def{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;background:var(--c-def-bg);color:var(--c-def);border:1px solid var(--c-def-br);font-family:var(--font-h);font-size:11px;font-weight:700;letter-spacing:.5px}
+    .status-exc{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;background:var(--c-exc-bg);color:var(--c-exc);border:1px solid var(--c-exc-br);font-family:var(--font-h);font-size:11px;font-weight:700;letter-spacing:.5px}
+    .status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+    .status-ok .status-dot{background:var(--c-ok)}.status-def .status-dot{background:var(--c-def)}.status-exc .status-dot{background:var(--c-exc)}
+    .action-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;font-size:11.5px;font-weight:600;font-family:var(--font-mono);white-space:nowrap}
+    .action-return{background:#EAF3FF;color:#004080}
+    .action-borrow{background:#FFEAEA;color:#900000}
+    .action-exact{background:var(--gray-1);color:var(--gray-5)}
+    .no-inv{font-size:11px;color:var(--gray-4);font-style:italic}
+    .prod-notice{background:white;border:1px solid var(--gray-2);padding:48px 32px;text-align:center;box-shadow:var(--sh-sm)}
+    .prod-notice-icon{font-size:48px;opacity:.2;margin-bottom:12px}
+    .prod-notice-title{font-family:var(--font-h);font-size:24px;font-weight:700;color:var(--black-3);margin-bottom:7px}
+    .prod-notice-sub{font-size:13px;color:var(--gray-4)}
+
+    /* ADMIN */
+    .admin-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:800;align-items:center;justify-content:center}
+    .admin-overlay.open{display:flex}
+    .admin-panel{background:white;width:760px;max-width:96vw;max-height:94vh;overflow-y:auto;border-top:4px solid var(--red);box-shadow:0 32px 80px rgba(0,0,0,.55);animation:slideUp .22s ease}
+    @keyframes slideUp{from{transform:translateY(24px);opacity:0}to{transform:translateY(0);opacity:1}}
+    .admin-hdr{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;background:var(--black-2);border-bottom:1px solid var(--black-3)}
+    .admin-hdr-left{display:flex;align-items:center;gap:10px}
+    .admin-lock{width:32px;height:32px;background:var(--red);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .admin-lock svg{width:16px;height:16px;color:white}
+    .admin-title{font-family:var(--font-h);font-size:20px;font-weight:800;color:white;letter-spacing:1px;text-transform:uppercase}
+    .admin-sub{font-size:11px;color:var(--gray-4);margin-top:2px}
+    .admin-close-btn{width:32px;height:32px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--gray-3);transition:all .15s}
+    .admin-close-btn:hover{background:var(--red);color:white}
+    .pin-screen{padding:36px 32px;text-align:center}
+    .pin-icon{font-size:44px;margin-bottom:14px;opacity:.7}
+    .pin-title{font-family:var(--font-h);font-size:22px;font-weight:700;margin-bottom:6px}
+    .pin-sub{font-size:12px;color:var(--gray-4);margin-bottom:28px}
+    .pin-dots{display:flex;gap:12px;justify-content:center;margin-bottom:22px}
+    .pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--gray-3);transition:all .15s}
+    .pin-dot.filled{background:var(--red);border-color:var(--red)}
+    .pin-error{color:var(--red);font-size:12px;font-weight:600;min-height:18px;margin-bottom:10px}
+    .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:240px;margin:0 auto}
+    .pin-key{padding:16px 10px;text-align:center;font-family:var(--font-h);font-size:22px;font-weight:700;background:var(--gray-1);border:1.5px solid var(--gray-2);transition:all .12s;cursor:pointer}
+    .pin-key:hover{background:var(--red);color:white;border-color:var(--red)}
+    .pin-key:active{transform:scale(.93)}
+    .pin-clr,.pin-del{font-size:13px !important;color:var(--gray-5) !important}
+    .admin-body{display:none;padding:24px}.admin-body.visible{display:block}
+    .admin-section{margin-bottom:26px}
+    .admin-section-title{font-family:var(--font-h);font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--gray-2);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .admin-section-title svg{width:14px;height:14px}
+    .badge{font-family:var(--font-mono);font-size:10px;background:var(--gray-2);color:var(--gray-5);padding:2px 7px}
+    .db-info-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+    .db-info-card{background:var(--gray-1);padding:14px;text-align:center;border:1px solid var(--gray-2)}
+    .db-info-val{font-family:var(--font-h);font-size:26px;font-weight:800;color:var(--black)}
+    .db-info-lbl{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--gray-4);margin-top:4px}
+    .db-info-ts{font-family:var(--font-mono);font-size:10px;color:var(--gray-4);margin-top:3px}
+    .admin-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+    .upload-mode-row{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding:11px 14px;background:var(--gray-1);border:1px solid var(--gray-2);flex-wrap:wrap}
+    .upload-mode-row label{font-size:12px;font-weight:600;color:var(--gray-5);letter-spacing:.5px;text-transform:uppercase;white-space:nowrap}
+    .upload-mode-row select{padding:7px 12px;border:1.5px solid var(--gray-2);font-size:12px;background:white;outline:none;cursor:pointer;min-width:190px}
+    .upload-mode-row select:focus{border-color:var(--red)}
+    .upload-mode-row span{font-size:11px;color:var(--gray-4);line-height:1.4}
+    .upload-cards{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+    .upload-card{flex:1;min-width:160px;border:2px dashed var(--gray-3);padding:20px 14px;text-align:center;cursor:pointer;position:relative;transition:all .2s}
+    .upload-card:hover,.upload-card.dragover{border-color:var(--red);background:var(--red-faint)}
+    .upload-card input{position:absolute;inset:0;opacity:0;cursor:pointer}
+    .uc-icon{font-size:28px;margin-bottom:8px}
+    .uc-title{font-family:var(--font-h);font-size:15px;font-weight:700;margin-bottom:4px}
+    .uc-sub{font-size:10.5px;color:var(--gray-4);line-height:1.4}
+    .uc-ok{margin-top:10px;font-size:10.5px;font-weight:600;color:var(--c-ok)}
+    .uc-ts{font-size:10px;color:var(--gray-4);margin-top:2px}
+    .admin-specs{background:var(--gray-1);border-left:3px solid var(--red);padding:14px 16px}
+    .admin-specs h5{font-family:var(--font-h);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:9px}
+    .admin-specs ul{list-style:none}
+    .admin-specs li{font-size:11.5px;color:var(--gray-5);padding:2.5px 0;display:flex;gap:6px}
+    .admin-specs li::before{content:'→';color:var(--red);font-weight:700;flex-shrink:0}
+    .prog-wrap{display:none;margin-top:14px}.prog-wrap.visible{display:block}
+    .prog-label{font-family:var(--font-mono);font-size:12px;color:var(--gray-5);margin-bottom:6px}
+    .prog-bar{height:3px;background:var(--gray-2);overflow:hidden}
+    .prog-fill{height:100%;background:var(--red);width:30%;animation:prog .9s ease-in-out infinite alternate}
+    @keyframes prog{from{margin-left:0;width:30%}to{margin-left:70%;width:30%}}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:28px;right:28px;background:var(--black);color:white;padding:13px 20px;font-family:var(--font-h);font-size:14px;font-weight:600;letter-spacing:.5px;box-shadow:var(--sh-md);z-index:9999;transform:translateX(120%);transition:transform .3s cubic-bezier(.3,0,.2,1);border-left:4px solid var(--red);max-width:340px}
+    .toast.show{transform:translateX(0)}
+    .toast.success{border-left-color:var(--c-ok)}.toast.error{border-left-color:var(--c-crit)}.toast.info{border-left-color:#0060A0}
+
+    ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:var(--gray-1)}::-webkit-scrollbar-thumb{background:var(--gray-3)}::-webkit-scrollbar-thumb:hover{background:var(--gray-4)}
+
+    @media(max-width:1100px){.db-info-grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:900px){.stats-grid{grid-template-columns:repeat(3,1fr)}.main{padding:14px}.prod-header{flex-direction:column}}
+    @media(max-width:600px){.stats-grid{grid-template-columns:repeat(2,1fr)}.brand-sub{display:none}}
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="hd-left">
+    <div class="logo-block" id="logo-block" title="Click 5× quickly to open admin">O2</div>
+    <div>
+      <div class="brand-name">ON2COOK <em>BOM</em> PORTAL</div>
+      <div class="brand-sub">Bill of Materials Management System</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div class="db-pill"><div class="db-dot" id="db-dot"></div><span id="db-status-text">Connecting…</span></div>
+  </div>
+</header>
+
+<!-- TAB BAR -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('bom')" id="tab-bom">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    BOM Parts
+  </button>
+  <button class="tab-btn" onclick="switchTab('inventory')" id="tab-inventory">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+    Store Inventory
+  </button>
+  <button class="tab-btn" onclick="switchTab('prodline')" id="tab-prodline">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+    Production Line
+  </button>
+  <button class="tab-btn" onclick="switchTab('planning')" id="tab-planning">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    Production Planning
+  </button>
+  <button class="tab-btn" onclick="switchTab('analysis')" id="tab-analysis">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    Analysis
+  </button>
+</div>
+
+<main class="main">
+
+  <!-- ══ BOM PARTS TAB ══ -->
+  <div class="tab-panel active" id="panel-bom">
+    <div class="stats-grid">
+      <div class="stat-card s-total"><div class="sc-label">Total Parts</div><div class="sc-value" id="stat-total">—</div><div class="sc-sub">Unique Part Numbers</div></div>
+      <div class="stat-card s-crit"><div class="sc-label">Critical &gt;60d</div><div class="sc-value" id="stat-crit">—</div><div class="sc-sub">Highest Lead Time Risk</div></div>
+      <div class="stat-card s-high"><div class="sc-label">High 30–60d</div><div class="sc-value" id="stat-high">—</div><div class="sc-sub">Needs Attention</div></div>
+      <div class="stat-card s-sub"><div class="sc-label">Sub-Assemblies</div><div class="sc-value" id="stat-sa">—</div><div class="sc-sub">Total Modules</div></div>
+      <div class="stat-card s-vendor"><div class="sc-label">Suppliers</div><div class="sc-value" id="stat-vendors">—</div><div class="sc-sub">Unique Vendors</div></div>
+    </div>
+    <div class="toolbar" style="margin-bottom:14px">
+      <div class="search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search-input" placeholder="Search Part No. or Name…" oninput="handleSearch(this.value)">
+      </div>
+      <div class="tb-div"></div>
+      <select class="filter-sel" id="filter-type"     onchange="applyFilters()"><option value="">All Part Types</option></select>
+      <select class="filter-sel" id="filter-urgency"  onchange="applyFilters()">
+        <option value="">All Urgency</option>
+        <option value="critical">Critical (&gt;60d)</option>
+        <option value="high">High (30–60d)</option>
+        <option value="medium">Medium (14–30d)</option>
+        <option value="low">Low (&lt;14d)</option>
+      </select>
+      <select class="filter-sel" id="filter-supplier" onchange="applyFilters()"><option value="">All Suppliers</option></select>
+      <select class="filter-sel" id="filter-country"  onchange="applyFilters(); showFxPanel()"><option value="">All Countries</option></select>
+      <select class="filter-sel" id="filter-sa"       onchange="applyFilters()"><option value="">All Sub-Assemblies</option></select>
+      <select class="filter-sel" id="filter-rework"   onchange="applyFilters()">
+        <option value="">Rework: All</option>
+        <option value="Yes">Rework Required</option>
+        <option value="No">No Rework</option>
+      </select>
+      <div class="tb-div"></div>
+      <button class="btn btn-outline" onclick="clearFilters()">✕ Clear</button>
+      <span class="active-count" id="active-count"></span>
+      <button class="btn-export" onclick="exportBOM()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export BOM
+      </button>
+    </div>
+
+    <!-- Currency rate panel (shown when a country is selected) -->
+    <div class="fx-panel" id="fx-panel">
+      <span class="fx-label">💱 Currency Rate for</span>
+      <span class="fx-curr" id="fx-country-label">—</span>
+      <span class="fx-label">: 1</span>
+      <span class="fx-curr" id="fx-curr-label">USD</span>
+      <span class="fx-label">=</span>
+      <input type="number" class="fx-input" id="fx-rate" placeholder="e.g. 84" min="0.001" step="0.01" oninput="applyFxRate()">
+      <span class="fx-label">INR</span>
+      <span class="fx-affected" id="fx-affected"></span>
+      <button class="fx-clear" onclick="clearFxRate()">Reset Rate</button>
+    </div>
+    <div class="table-card">
+      <div class="tc-header"><div class="tc-title">Parts List — On2Cook Device BOM</div><div class="tc-meta" id="tbl-meta">No data loaded</div></div>
+      <div class="tbl-scroll">
+        <table id="bom-table" style="display:none;min-width:2000px">
+          <thead><tr>
+            <th class="col-expand no-sort"></th>
+            <th class="col-pno"         onclick="sortCol('partNumber')">Part Number</th>
+            <th style="min-width:190px" onclick="sortCol('partName')">Part Name</th>
+            <th style="min-width:220px" onclick="sortCol('partDesc')">Description</th>
+            <th style="min-width:110px" onclick="sortCol('hsnCode')">HSN Code</th>
+            <th style="min-width:140px" onclick="sortCol('partType')">Part Type</th>
+            <th style="min-width:90px"  onclick="sortCol('reworkRequired')">Rework</th>
+            <th style="min-width:155px" onclick="sortCol('material')">Material</th>
+            <th style="min-width:72px"  onclick="sortCol('qty')">Qty</th>
+            <th style="min-width:65px"  onclick="sortCol('uom')">UOM</th>
+            <th style="min-width:125px" onclick="sortCol('vendorUnitRate')">Vendor Rate</th>
+            <th style="min-width:140px" onclick="sortCol('totalUnitCost')">O2C Unit Cost</th>
+            <th style="min-width:115px" onclick="sortCol('customDuty')">Custom Duty</th>
+            <th style="min-width:105px" onclick="sortCol('surchargePercent')">Surcharge %</th>
+            <th style="min-width:85px"  onclick="sortCol('dutyPercent')">Duty %</th>
+            <th style="min-width:125px" onclick="sortCol('totalFreight')">Total Freight</th>
+            <th style="min-width:160px" onclick="sortCol('landedCost')">Landed Cost/Unit</th>
+            <th style="min-width:165px" onclick="sortCol('supplierName')">Supplier</th>
+            <th style="min-width:110px" onclick="sortCol('country')">Country</th>
+            <th style="min-width:115px" onclick="sortCol('leadTimeDays')">Lead Time</th>
+            <th style="min-width:115px" onclick="sortCol('urgency')">Urgency</th>
+          </tr></thead>
+          <tbody id="bom-tbody"></tbody>
+        </table>
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">📋</div>
+          <div class="empty-title">No BOM Data Loaded</div>
+          <div class="empty-sub">Contact your administrator to upload the BOM file</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ STORE INVENTORY TAB ══ -->
+  <div class="tab-panel" id="panel-inventory">
+    <div id="inv-table-area">
+      <div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">No Inventory Data</div><div class="empty-sub">Ask admin to upload the Store Inventory file</div></div>
+    </div>
+  </div>
+
+  <!-- ══ PRODUCTION LINE TAB ══ -->
+  <div class="tab-panel" id="panel-prodline">
+    <div id="prod-line-area">
+      <div class="empty-state"><div class="empty-icon">🏭</div><div class="empty-title">No Production Line Data</div><div class="empty-sub">Ask admin to upload the Production Line file</div></div>
+    </div>
+  </div>
+
+  <!-- ══ PRODUCTION PLANNING TAB ══ -->
+  <div class="tab-panel" id="panel-planning">
+    <div class="prod-header">
+      <div class="prod-config">
+        <h3>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+          Production Run Config
+        </h3>
+        <div class="config-row">
+          <span class="config-label">Units to Produce</span>
+          <input type="number" class="config-input" id="prod-units" value="250" min="1" max="99999">
+          <span style="font-size:12px;color:var(--gray-4)">devices</span>
+        </div>
+        <div class="config-row">
+          <span class="config-label">Store Inventory</span>
+          <span class="inv-pill not-loaded" id="inv-pill"><span id="inv-pill-text">Not loaded</span></span>
+        </div>
+        <div class="config-row" style="margin-bottom:0">
+          <span class="config-label">Production Line</span>
+          <span class="inv-pill not-loaded" id="prod-pill"><span id="prod-pill-text">Not loaded</span></span>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-red btn-sm" onclick="runFeasibility()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Check Feasibility
+          </button>
+          <button class="btn btn-outline btn-sm" onclick="exportProdPlan()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export Plan
+          </button>
+        </div>
+      </div>
+      <div class="inv-value-card" id="inv-value-card" style="display:none">
+        <div class="inv-value-label">Total Inventory Value</div>
+        <div class="inv-value-total" id="inv-value-total">—</div>
+        <div class="inv-value-sub" id="inv-value-sub"></div>
+      </div>
+      <div class="feas-banner" id="feas-banner" style="display:none">
+        <div class="feas-result">
+          <div class="feas-icon" id="feas-icon">⚙️</div>
+          <div><div class="feas-verdict" id="feas-verdict">—</div><div class="feas-sub" id="feas-sub"></div></div>
+        </div>
+        <div class="feas-pills">
+          <div class="feas-pill pill-ok"><div class="feas-pill-val" id="feas-ok">—</div><div class="feas-pill-lbl">Parts OK</div></div>
+          <div class="feas-pill pill-exc"><div class="feas-pill-val" id="feas-exc">—</div><div class="feas-pill-lbl">Return Excess</div></div>
+          <div class="feas-pill pill-def"><div class="feas-pill-val" id="feas-def">—</div><div class="feas-pill-lbl">Procure</div></div>
+        </div>
+      </div>
+    </div>
+    <div id="prod-content-area"></div>
+  </div>
+
+  <!-- ══ ANALYSIS TAB ══ -->
+  <div class="tab-panel" id="panel-analysis">
+    <div id="analysis-area">
+      <div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No Data for Analysis</div><div class="empty-sub">Upload BOM and Inventory files first</div></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ADMIN OVERLAY -->
+<div class="admin-overlay" id="admin-overlay" onclick="handleAdminOverlayClick(event)">
+  <div class="admin-panel" id="admin-panel">
+    <div class="admin-hdr">
+      <div class="admin-hdr-left">
+        <div class="admin-lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <div><div class="admin-title">Admin — Data Management</div><div class="admin-sub">Restricted access · Authorised personnel only</div></div>
+      </div>
+      <button class="admin-close-btn" onclick="closeAdmin()">✕</button>
+    </div>
+    <!-- PIN -->
+    <div class="pin-screen" id="pin-screen">
+      <div class="pin-icon">🔐</div>
+      <div class="pin-title">Enter Admin PIN</div>
+      <div class="pin-sub">Enter your 4-digit PIN to access data management</div>
+      <div class="pin-dots" id="pin-dots"><div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div><div class="pin-dot" id="pd2"></div><div class="pin-dot" id="pd3"></div></div>
+      <div class="pin-error" id="pin-error"></div>
+      <div class="pin-pad">
+        <button class="pin-key" onclick="pinKey('1')">1</button><button class="pin-key" onclick="pinKey('2')">2</button><button class="pin-key" onclick="pinKey('3')">3</button>
+        <button class="pin-key" onclick="pinKey('4')">4</button><button class="pin-key" onclick="pinKey('5')">5</button><button class="pin-key" onclick="pinKey('6')">6</button>
+        <button class="pin-key" onclick="pinKey('7')">7</button><button class="pin-key" onclick="pinKey('8')">8</button><button class="pin-key" onclick="pinKey('9')">9</button>
+        <button class="pin-key pin-clr" onclick="pinClear()">CLR</button><button class="pin-key" onclick="pinKey('0')">0</button><button class="pin-key pin-del" onclick="pinDel()">⌫</button>
+      </div>
+    </div>
+    <!-- Admin Body -->
+    <div class="admin-body" id="admin-body">
+      <div class="admin-section">
+        <div class="admin-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          Database Status <span class="badge">Supabase · Cloud PostgreSQL</span>
+        </div>
+        <div class="db-info-grid">
+          <div class="db-info-card"><div class="db-info-val" id="adb-parts">—</div><div class="db-info-lbl">BOM Parts</div><div class="db-info-ts" id="adb-bom-ts">Not loaded</div></div>
+          <div class="db-info-card"><div class="db-info-val" id="adb-inv">—</div><div class="db-info-lbl">Inventory Items</div><div class="db-info-ts" id="adb-inv-ts">Not loaded</div></div>
+          <div class="db-info-card"><div class="db-info-val" id="adb-prod">—</div><div class="db-info-lbl">Production Items</div><div class="db-info-ts" id="adb-prod-ts">Not loaded</div></div>
+          <div class="db-info-card"><div class="db-info-val" id="adb-sa">—</div><div class="db-info-lbl">Sub-Assemblies</div><div class="db-info-ts" id="adb-sa-ts">—</div></div>
+        </div>
+        <div class="admin-actions">
+          <button class="btn btn-outline btn-sm" onclick="adminRefreshStats()">↺ Refresh Stats</button>
+          <button class="btn btn-danger btn-sm" onclick="adminClearAll()">✕ Clear All Data</button>
+        </div>
+      </div>
+      <div class="admin-section">
+        <div class="admin-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+          Upload Data Files <span class="badge">.xlsx / .xls only</span>
+        </div>
+        <div class="upload-mode-row">
+          <label for="upload-mode">Upload Mode</label>
+          <select id="upload-mode">
+            <option value="replace">Replace All (full refresh)</option>
+            <option value="merge">Merge / Update only</option>
+          </select>
+          <span><strong>Replace All</strong> — wipes then inserts fresh &nbsp;·&nbsp; <strong>Merge</strong> — updates changed rows only</span>
+        </div>
+        <div class="upload-cards">
+          <div class="upload-card" id="uc-bom" ondragover="ucDragOver(event,'bom')" ondragleave="ucDragLeave('bom')" ondrop="ucDrop(event,'bom')">
+            <input type="file" accept=".xlsx,.xls" onchange="ucSelect(event,'bom')">
+            <div class="uc-icon">📋</div><div class="uc-title">BOM File</div>
+            <div class="uc-sub">Tab 1 = master list<br>Tabs 2+ = sub-assemblies</div>
+            <div class="uc-ok" id="uc-bom-ok" style="display:none">✓ Loaded</div><div class="uc-ts" id="uc-bom-ts"></div>
+          </div>
+          <div class="upload-card" id="uc-inv" ondragover="ucDragOver(event,'inv')" ondragleave="ucDragLeave('inv')" ondrop="ucDrop(event,'inv')">
+            <input type="file" accept=".xlsx,.xls" onchange="ucSelect(event,'inv')">
+            <div class="uc-icon">📦</div><div class="uc-title">Store Inventory</div>
+            <div class="uc-sub">Per Unit Qty · Item Code<br>Current Stock · Lead Time<br>Reorder Point · Status</div>
+            <div class="uc-ok" id="uc-inv-ok" style="display:none">✓ Loaded</div><div class="uc-ts" id="uc-inv-ts"></div>
+          </div>
+          <div class="upload-card" id="uc-prod" ondragover="ucDragOver(event,'prod')" ondragleave="ucDragLeave('prod')" ondrop="ucDrop(event,'prod')">
+            <input type="file" accept=".xlsx,.xls" onchange="ucSelect(event,'prod')">
+            <div class="uc-icon">🏭</div><div class="uc-title">Production Line</div>
+            <div class="uc-sub">Item Code · Line Issue<br>Line Rejection · Location</div>
+            <div class="uc-ok" id="uc-prod-ok" style="display:none">✓ Loaded</div><div class="uc-ts" id="uc-prod-ts"></div>
+          </div>
+        </div>
+        <div class="admin-specs">
+          <h5>Expected Column Names</h5>
+          <ul>
+            <li><strong>BOM Tab 1:</strong> Part Number | Part Name | Quantity</li>
+            <li><strong>BOM Sub-assembly tabs:</strong> Part Number | Part Name | Part Description | HSN Code | Part Type | Rework Required | Material | Quantity | UOM + optional cost columns</li>
+            <li><strong>Inventory:</strong> Item Code | Item Name | Per Unit Qty | Current Stock | Lead Time | Reorder Point | Stock Status | (+ all extended columns)</li>
+            <li><strong>Production Line:</strong> Item Code | Item Name | Per Unit Qty | Location | Line Issue | Line Rejection</li>
+          </ul>
+        </div>
+        <div class="prog-wrap" id="prog-wrap"><div class="prog-label" id="prog-label">Processing…</div><div class="prog-bar"><div class="prog-fill"></div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Scripts: XLSX first, then app files -->
+<script src="js/xlsx.min.js"></script>
+<script>if(typeof XLSX==='undefined'){ var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; document.head.appendChild(s); }</script>
+<script src="js/db.js"></script>
+<script src="js/upload.js"></script>
+<script src="js/production.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
