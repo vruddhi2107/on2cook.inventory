@@ -1,418 +1,507 @@
 /**
- * upload.js — Admin · PIN · BOM + Store parsers
- * Secret: click O2 logo 5× in 3 sec  |  PIN: 2580
+ * upload.js — File upload & Excel parsing · On2Cook BOM Portal
  *
- * ═══ BOM FILE STRUCTURE ═══════════════════════════════════════
+ * BOM multi-sheet logic:
+ *   Sheet[0] = Tab 1 — master unique-part rows (cost data lives here)
+ *   Sheet[1+] = Sub-assembly tabs (e.g. "O2C-EC-SA-001")
+ *              Each SA tab lists Part Numbers + their Qty in that SA.
+ *              Column details (Desc, HSN, Type…) are merged into the master row.
  *
- *  Tab 1 — "Unique Part Numbers" (MASTER / COST DATA SOURCE)
- *    Columns: Part Number, Part Name, Part Description, HSN Code,
- *             Part Type, Rework Required, Rework Drawing Reference,
- *             Part Sub-Category, Part Category, Material of Construction,
- *             Revision No., Quantity (TOTAL), Unit of Measurement,
- *             Unit Rate (Vendor Currency), Vendor Currency, Exchange Rate,
- *             Unit Cost INR, Total Unit Cost, Custom Duty, Surcharge,
- *             Total Custom Duty, Surcharge %, Duty %, Freight Only,
- *             Other Expenses, Total Freight, Total Unit Landed Cost,
- *             Total BOM Cost, Supplier Name, Country, Lead Time, Finalized
+ *   After parsing, every master part gets:
+ *     saBreakdown:   [{id, qty, sno, finalized}, …]  ← one entry per SA tab that contains this part
+ *     subAssemblyId: comma-joined SA names            ← used by BOM filter dropdown
  *
- *  Tabs 2+ — Sub-assembly tabs (MEMBERSHIP + SA-QTY SOURCE)
- *    Tab name = Sub-Assembly ID (e.g. O2C-EC-SA-001)
- *    Columns: Finalized, S.No., Photo, Part Number, Part Name,
- *             Part Description, HSN Code, Part Type, Rework Required,
- *             Rework Drawing Reference, Part Sub-Category, Part Category,
- *             Material of Construction, Revision No., Quantity (in THIS SA),
- *             Unit of Measurement
- *    → NO cost columns needed here; costs come from Tab 1
- *
- * ═══ STORAGE STRATEGY ═════════════════════════════════════════
- *  One DB row per UNIQUE PART (from Tab 1).
- *  SA membership + per-SA qty stored as JSON in sno field:
- *    sno = "TAB1QTY:<totalQty>|SAMAP:<json>|<realSno>"
- *    SAMAP json = [{id:"SA-001",qty:10},{id:"SA-005",qty:10},...]
- *  This encodes everything needed for the expandable breakdown
- *  without requiring any schema changes.
+ * Store:
+ *   Single-sheet; all columns preserved verbatim → _rawRow / _rawHeaders.
  */
 
-var ADMIN_PIN = '2580';
+/* ══════════════════════════════════════════════
+   ADMIN OVERLAY
+══════════════════════════════════════════════ */
+var _logoClicks = 0, _logoTimer = null;
 
-/* ─── Column finder ──────────────────────────── */
-function _norm(s) {
-  return String(s || '').trim().toLowerCase().replace(/[\s_\-\(\)\/\|&\.#%]+/g, '');
-}
-function _makeFinder(sampleRow) {
-  var keys = Object.keys(sampleRow);
-  return function() {
-    var cands = Array.prototype.slice.call(arguments);
-    var i, n, found;
-    for (i = 0; i < cands.length; i++) {
-      n = _norm(cands[i]);
-      found = keys.find(function(k) { return _norm(k) === n; });
-      if (found) return found;
-    }
-    for (i = 0; i < cands.length; i++) {
-      n = _norm(cands[i]);
-      found = keys.find(function(k) { return _norm(k).startsWith(n); });
-      if (found) return found;
-    }
-    for (i = 0; i < cands.length; i++) {
-      n = _norm(cands[i]);
-      if (n.length >= 5) {
-        found = keys.find(function(k) { return _norm(k).includes(n); });
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-}
-
-/* ─── Logo tap ───────────────────────────────── */
-var _tapN = 0, _tapT = null;
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
   var logo = document.getElementById('logo-block');
-  if (!logo) return;
-  logo.addEventListener('click', function() {
-    _tapN++;
-    logo.classList.add('tap-flash');
-    setTimeout(function() { logo.classList.remove('tap-flash'); }, 250);
-    clearTimeout(_tapT);
-    _tapT = setTimeout(function() { _tapN = 0; }, 3000);
-    if (_tapN >= 5) { _tapN = 0; clearTimeout(_tapT); openAdmin(); }
-  });
+  if (logo) {
+    logo.addEventListener('click', function () {
+      _logoClicks++;
+      clearTimeout(_logoTimer);
+      if (_logoClicks >= 5) { _logoClicks = 0; openAdmin(); return; }
+      _logoTimer = setTimeout(function () { _logoClicks = 0; }, 1500);
+      logo.classList.add('tap-flash');
+      setTimeout(function () { logo.classList.remove('tap-flash'); }, 200);
+    });
+  }
 });
 
-/* ─── Admin overlay ──────────────────────────── */
-function openAdmin() { _pinReset(); document.getElementById('admin-overlay').classList.add('open'); }
-function closeAdmin() { document.getElementById('admin-overlay').classList.remove('open'); }
-function handleAdminOverlayClick(e) { if (e.target.id === 'admin-overlay') closeAdmin(); }
+var _pinVal = '', _pinCorrect = '2580', _adminUnlocked = false;
 
-/* ─── PIN ────────────────────────────────────── */
-var _pin = '';
-function pinKey(d) { if (_pin.length >= 4) return; _pin += d; _drawDots(); if (_pin.length === 4) setTimeout(_checkPin, 180); }
-function pinDel()   { _pin = _pin.slice(0, -1); _drawDots(); }
-function pinClear() { _pin = ''; _drawDots(); _pinErr(''); }
-function _pinReset(){ _pin = ''; _drawDots(); _pinErr(''); _showPinScreen(); }
-function _drawDots() { for (var i = 0; i < 4; i++) { var e = document.getElementById('pd' + i); if (e) e.classList.toggle('filled', i < _pin.length); } }
-function _pinErr(m)  { var e = document.getElementById('pin-error'); if (e) e.textContent = m; }
-function _checkPin() {
-  if (_pin === ADMIN_PIN) { _pinErr(''); _showAdminBody(); adminRefreshStats(); }
-  else {
-    _pinErr('Incorrect PIN'); _pin = ''; _drawDots();
-    var d = document.getElementById('pin-dots');
-    if (d) { d.style.animation = 'none'; d.offsetHeight; d.style.animation = 'shake .3s ease'; setTimeout(function(){ d.style.animation = ''; }, 400); }
+function openAdmin() {
+  document.getElementById('admin-overlay').classList.add('open');
+  if (!_adminUnlocked) {
+    _pinVal = '';
+    _renderPin();
+    document.getElementById('pin-error').textContent = '';
+    document.getElementById('pin-screen').style.display = '';
+    document.getElementById('admin-body').classList.remove('visible');
+  }
+  adminRefreshStats();
+}
+function closeAdmin() { document.getElementById('admin-overlay').classList.remove('open'); }
+function handleAdminOverlayClick(e) { if (e.target === document.getElementById('admin-overlay')) closeAdmin(); }
+
+function pinKey(k) {
+  if (_pinVal.length >= 4) return;
+  _pinVal += k;
+  _renderPin();
+  if (_pinVal.length === 4) setTimeout(_checkPin, 140);
+}
+function pinDel()   { _pinVal = _pinVal.slice(0, -1); _renderPin(); }
+function pinClear() { _pinVal = ''; _renderPin(); document.getElementById('pin-error').textContent = ''; }
+
+function _renderPin() {
+  for (var i = 0; i < 4; i++) {
+    var d = document.getElementById('pd' + i);
+    if (d) d.classList.toggle('filled', i < _pinVal.length);
   }
 }
-function _showPinScreen(){ var p=document.getElementById('pin-screen'),b=document.getElementById('admin-body'); if(p)p.style.display='block'; if(b)b.classList.remove('visible'); }
-function _showAdminBody(){ var p=document.getElementById('pin-screen'),b=document.getElementById('admin-body'); if(p)p.style.display='none'; if(b)b.classList.add('visible'); }
-(function(){ var s=document.createElement('style'); s.textContent='@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}'; document.head.appendChild(s); })();
 
-/* ─── Admin stats ────────────────────────────── */
+function _checkPin() {
+  if (_pinVal === _pinCorrect) {
+    _adminUnlocked = true;
+    document.getElementById('pin-screen').style.display = 'none';
+    document.getElementById('admin-body').classList.add('visible');
+  } else {
+    document.getElementById('pin-error').textContent = 'Incorrect PIN — try again.';
+    _pinVal = ''; _renderPin();
+  }
+}
+
 async function adminRefreshStats() {
   try {
-    var r = await Promise.all([BomDB.count('bom_parts'), BomDB.count('store_inventory'), BomDB.getMeta('bom_uploaded_at'), BomDB.getMeta('inv_uploaded_at')]);
-    _setText('adb-parts', r[0] || '—'); _setText('adb-inv', r[1] || '—');
-    _setText('adb-bom-ts', r[2] ? _fmtTs(r[2].updated_at) : 'Not loaded');
-    _setText('adb-inv-ts', r[3] ? _fmtTs(r[3].updated_at) : 'Not loaded');
-    if (r[0] > 0 && r[2]) { _showEl('uc-bom-ok'); _setText('uc-bom-ts', _fmtTs(r[2].updated_at)); }
-    if (r[1] > 0 && r[3]) { _showEl('uc-inv-ok'); _setText('uc-inv-ts', _fmtTs(r[3].updated_at)); }
-  } catch(e) { console.warn('adminRefreshStats:', e); }
+    var bc = await BomDB.count('bom_parts');
+    var ic = await BomDB.count('store_inventory');
+    _t('adb-parts', bc || '0');
+    _t('adb-inv',   ic || '0');
+    var bm = await BomDB.getMeta('bom_uploaded_at');
+    var im = await BomDB.getMeta('inv_uploaded_at');
+    _t('adb-bom-ts', bm ? _fmtTs(bm.value) : 'Not loaded');
+    _t('adb-inv-ts', im ? _fmtTs(im.value) : 'Not loaded');
+  } catch (e) { /* silent */ }
 }
+
+function _fmtTs(iso) {
+  try { return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+  catch (e) { return iso || '—'; }
+}
+
 async function adminClearAll() {
-  if (!confirm('Clear ALL data from database? Cannot be undone.')) return;
-  await BomDB.clearAll();
-  showToast('All data cleared', 'info');
-  adminRefreshStats();
-  loadBomData([]); loadStoreData([]);
+  if (!confirm('Delete ALL data from the database?\nThis cannot be undone.')) return;
+  try {
+    _prog(true, 'Clearing database…');
+    await BomDB.clearAll();
+    loadBomData([]);
+    loadStoreData([]);
+    _dbUI('green', 'connected — no data yet');
+    showToast('✓ All data cleared', 'success');
+    await adminRefreshStats();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally { _prog(false); }
 }
 
-/* ─── Drag / drop / select ───────────────────── */
-function ucDragOver(e, t) { e.preventDefault(); document.getElementById('uc-' + t).classList.add('dragover'); }
-function ucDragLeave(t)   { document.getElementById('uc-' + t).classList.remove('dragover'); }
-function ucDrop(e, t)     { e.preventDefault(); ucDragLeave(t); var f = e.dataTransfer.files[0]; if (f) _proc(f, t); }
-function ucSelect(e, t)   { var f = e.target.files[0]; if (f) _proc(f, t); }
-function _getMode()       { var e = document.getElementById('upload-mode'); return e ? e.value : 'replace'; }
+/* ══════════════════════════════════════════════
+   DRAG & DROP
+══════════════════════════════════════════════ */
+function ucDragOver(e, type)  { e.preventDefault(); document.getElementById('uc-' + type).classList.add('dragover'); }
+function ucDragLeave(type)    { document.getElementById('uc-' + type).classList.remove('dragover'); }
+function ucDrop(e, type)      { e.preventDefault(); ucDragLeave(type); var f = e.dataTransfer.files[0]; if (f) _processFile(f, type); }
+function ucSelect(e, type)    { var f = e.target.files[0]; if (f) _processFile(f, type); e.target.value = ''; }
 
-/* ─── File processor ─────────────────────────── */
-async function _proc(file, type) {
-  if (typeof XLSX === 'undefined') { showToast('XLSX library missing', 'error'); return; }
-  var ext = file.name.split('.').pop().toLowerCase();
-  if (ext !== 'xlsx' && ext !== 'xls') { showToast('Upload .xlsx or .xls only', 'error'); return; }
-  _showProg('Reading "' + file.name + '"…');
+/* ══════════════════════════════════════════════
+   FILE ENTRY POINT
+══════════════════════════════════════════════ */
+function _processFile(file, type) {
+  if (!file.name.match(/\.(xlsx|xls)$/i)) {
+    showToast('Please upload an Excel file (.xlsx or .xls)', 'error');
+    return;
+  }
+  _prog(true, 'Reading file…');
   var reader = new FileReader();
-  reader.onerror = function() { showToast('Could not read file', 'error'); _hideProg(); };
-  reader.onload  = async function(ev) {
+  reader.onload = function (e) {
     try {
-      var wb   = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', cellDates: true });
-      var mode = _getMode();
-      if (type === 'bom') {
-        _setProgLbl('Parsing BOM sheets…');
-        var parts = _parseBOM(wb);
-        if (!parts.length) { showToast('No BOM rows found — check file structure', 'error'); _hideProg(); return; }
-        _setProgLbl('Saving ' + parts.length + ' rows…');
-        if (mode === 'replace') await BomDB.clearAndInsert('bom_parts', parts);
-        else                    await BomDB.putAll('bom_parts', parts);
-        await BomDB.setMeta('bom_uploaded_at', new Date().toISOString());
-        _hideProg(); adminRefreshStats(); loadBomData(parts);
-        showToast('✓ BOM saved — ' + parts.length + ' unique parts', 'success');
-      } else if (type === 'inv') {
-        _setProgLbl('Parsing Store Inventory…');
-        var inv = _parseStore(wb);
-        if (!inv.length) { showToast('No rows found', 'error'); _hideProg(); return; }
-        _setProgLbl('Saving ' + inv.length + ' items…');
-        if (mode === 'replace') await BomDB.clearAndInsert('store_inventory', inv);
-        else                    await BomDB.putAll('store_inventory', inv);
-        await BomDB.setMeta('inv_uploaded_at', new Date().toISOString());
-        _hideProg(); adminRefreshStats(); loadStoreData(inv);
-        showToast('✓ Store saved — ' + inv.length + ' items', 'success');
-      }
-    } catch(err) {
-      console.error('Upload error:', err);
-      showToast('Error: ' + err.message, 'error');
-      _hideProg();
+      var wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
+      if (type === 'bom') _parseBom(wb);
+      if (type === 'inv') _parseInv(wb);
+    } catch (err) {
+      _prog(false);
+      showToast('Parse error: ' + err.message, 'error');
+      console.error(err);
     }
   };
-  reader.readAsArrayBuffer(file);
+  reader.onerror = function () { _prog(false); showToast('File read error', 'error'); };
+  reader.readAsBinaryString(file);
 }
 
-/* ═══════════════════════════════════════════════════════
-   BOM PARSER
-   ─────────────────────────────────────────────────────
-   Tab 1 → master list: one row per unique part with ALL columns
-            including all cost data, supplier, lead time, total qty
+/* ══════════════════════════════════════════════
+   BOM PARSER — MULTI-SHEET
+   ─────────────────────────────────────────────
+   Tab 1  →  master part rows (cost data, totals)
+   Tab 2+ →  sub-assembly tabs, each named by SA ID
+             Columns: S.No, Finalized, Part Number,
+             Part Name, Part Desc, HSN, Type, Rework,
+             Material, Revision, Quantity (in this SA), UOM
+══════════════════════════════════════════════ */
+function _parseBom(wb) {
+  var sheetNames = wb.SheetNames;
+  if (!sheetNames.length) { showToast('Excel file appears empty', 'error'); _prog(false); return; }
 
-   Tabs 2+ → SA membership: tab name = SA ID
-             Columns: Finalized, S.No., Photo, Part Number, Part Name,
-             Part Description, HSN Code, Part Type, Rework Required,
-             Rework Drawing Reference, Part Sub-Category, Part Category,
-             Material of Construction, Revision No., Quantity (in THIS SA),
-             Unit of Measurement
-             → NO cost columns; costs from Tab 1 only
+  /* ── STEP 1: Parse Tab 1 (master) ── */
+  _prog(true, 'Parsing Tab 1 — master parts…');
+  var masterSheet = wb.Sheets[sheetNames[0]];
+  var masterRows  = XLSX.utils.sheet_to_json(masterSheet, { defval: '' });
 
-   One DB row per unique part.
-   SA membership + per-SA qty packed into sno as:
-     "TAB1QTY:<n>|SAMAP:<jsonArray>|<realSno>"
-═══════════════════════════════════════════════════════ */
-function _parseBOM(wb) {
-  var sheets = wb.SheetNames;
-  if (!sheets.length) return [];
+  if (!masterRows.length) { showToast('Tab 1 has no data rows', 'error'); _prog(false); return; }
 
-  /* Column mapper reused across all tabs */
-  function _mapCols(sr) {
-    var f = _makeFinder(sr);
-    return {
-      f: f,
-      finalized:    f('finalized','final'),
-      sno:          f('s.no','sno','s no','serial no','sr no','sl no','no.'),
-      pn:           f('part number','partno','part no','part#'),
-      nm:           f('part name','name'),
-      desc:         f('part description','description','desc'),
-      hsn:          f('hsn code','hsn'),
-      type:         f('part type','type'),
-      rework:       f('rework required','rework req','rework'),
-      reworkRef:    f('rework drawing reference','rework drawing','rework ref'),
-      subCat:       f('part sub-category','part sub category','sub category','subcategory','sub-cat'),
-      cat:          f('part category','category','cat'),
-      material:     f('material of construction','material'),
-      revNo:        f('revision no','revision no.','rev no','revision','rev'),
-      qty:          f('quantity','qty'),
-      uom:          f('unit of measurement','uom','unit'),
-      unitRate:     f('unit rate in vendor currency','unit rate (in vendor currency)','unit rate','vendor rate','rate'),
-      curr:         f('vendor currency','currency'),
-      exRate:       f('exchange rate','ex rate','exrate','fx rate'),
-      unitCostInr:  f('unit cost inr','unit cost','cost inr'),
-      totalCost:    f('total unit cost','total cost','o2c unit cost'),
-      customDuty:   f('custom duty'),
-      surcharge:    f('surcharge'),
-      totalDuty:    f('total custom duty','total duty'),
-      surPct:       f('surcharge %','surcharge percent','surcharge%'),
-      dutyPct:      f('duty %','duty percent','duty%'),
-      freightOnly:  f('freight only','freight'),
-      otherExp:     f('other expenses','other exp','other'),
-      totalFreight: f('total freight'),
-      landed:       f('total unit landed cost','total landed cost','landed cost','landed'),
-      totalBom:     f('total bom cost','total bom','bom cost'),
-      supplier:     f('supplier name','supplier'),
-      country:      f('country'),
-      lead:         f('lead time','lead'),
+  /* partMap: lowercase(partNumber) → part object */
+  var partMap   = {};
+  var partOrder = [];   // preserve Tab 1 order
+
+  masterRows.forEach(function (row, idx) {
+    var pn = _cv(row, ['part number', 'part_number', 'part no', 'part no.', 'partno', 'partnumber', 'part#']) || '';
+    pn = String(pn).trim();
+    if (!pn) return;   // skip blank rows
+
+    var key = pn.toLowerCase();
+    if (partMap[key]) return;   // deduplicate within Tab 1
+
+    var part = {
+      /* identity */
+      id:                   key + '_' + Date.now() + '_' + idx,
+      sno:                  String(_cv(row, ['s.no', 's.no.', 'sno', 's no', 'serial no', 'sl no', 'sr no']) || (idx + 1)),
+      finalized:            String(_cv(row, ['finalized', 'finalised']) || 'No'),
+      partNumber:           pn,
+      partName:             String(_cv(row, ['part name', 'partname', 'name']) || ''),
+      /* descriptive (also enriched from SA tabs) */
+      partDesc:             String(_cv(row, ['part description', 'part desc', 'description', 'desc']) || ''),
+      hsnCode:              String(_cv(row, ['hsn code', 'hsn', 'hsncode', 'hsn/sac']) || ''),
+      partType:             String(_cv(row, ['part type', 'parttype', 'type', 'component type']) || ''),
+      reworkRequired:       String(_cv(row, ['rework required', 'rework req', 'rework', 'rework req.']) || 'No'),
+      reworkDrawingRef:     String(_cv(row, ['rework drawing ref', 'rework drawing reference', 'drawing ref']) || ''),
+      partSubCategory:      String(_cv(row, ['part sub category', 'sub category', 'sub-category', 'subcategory']) || ''),
+      partCategory:         String(_cv(row, ['part category', 'category']) || ''),
+      material:             String(_cv(row, ['material', 'material of construction', 'material of const.']) || ''),
+      revisionNo:           String(_cv(row, ['revision no', 'revision no.', 'rev no', 'revision']) || ''),
+      /* quantities */
+      quantity:             _cn(row, ['quantity', 'qty', 'total qty', 'total quantity', 'total qty (device)']),
+      uom:                  String(_cv(row, ['uom', 'unit', 'unit of measurement', 'units']) || 'PCS'),
+      /* cost columns */
+      unitRateVendor:       _cn(row, ['unit rate', 'unit rate vendor', 'unit rate (vendor)', 'vendor rate', 'rate']),
+      vendorCurrency:       String(_cv(row, ['vendor currency', 'currency', 'curr']) || 'INR').trim().toUpperCase(),
+      exchangeRate:         _cn(row, ['exchange rate', 'ex rate', 'fx rate', 'exch rate']) || 1,
+      unitCostInr:          _cn(row, ['unit cost inr', 'unit cost (inr)', 'cost inr', 'unit cost']),
+      totalUnitCost:        _cn(row, ['total unit cost', 'total unit cost (o2c)', 'o2c unit cost', 'total cost']),
+      customDuty:           _cn(row, ['custom duty', 'customs duty', 'custom duty (inr)']),
+      surcharge:            _cn(row, ['surcharge']),
+      totalCustomDuty:      _cn(row, ['total custom duty', 'total customs duty']),
+      surchargePercent:     _cn(row, ['surcharge %', 'surcharge percent', 'surcharge%', 'surcharge (%)']),
+      dutyPercent:          _cn(row, ['duty %', 'duty percent', 'duty%', 'duty (%)']),
+      freightOnly:          _cn(row, ['freight only', 'freight', 'freight cost']),
+      otherExpenses:        _cn(row, ['other expenses', 'other expense', 'other exp']),
+      totalFreight:         _cn(row, ['total freight', 'freight total']),
+      totalUnitLandedCost:  _cn(row, ['total unit landed cost', 'landed cost', 'total landed cost']),
+      totalBomCost:         _cn(row, ['total bom cost', 'bom cost', 'total cost (bom)']),
+      /* sourcing */
+      supplierName:         String(_cv(row, ['supplier name', 'supplier', 'vendor name', 'vendor']) || ''),
+      country:              String(_cv(row, ['country', 'country of origin']) || ''),
+      leadTime:             String(_cv(row, ['lead time', 'lead time (days)', 'leadtime']) || ''),
+      /* computed after parsing */
+      urgency:              _calcUrgency(String(_cv(row, ['lead time', 'lead time (days)', 'leadtime']) || '')),
+      subAssemblyId:        '',   // filled in Step 3
+      saBreakdown:          [],   // filled in Step 2
+      tab1Qty:              _cn(row, ['quantity', 'qty', 'total qty', 'total quantity']),
     };
-  }
 
-  /* ── Step 1: Parse Tab 1 (master) ── */
-  var tab1Rows = XLSX.utils.sheet_to_json(wb.Sheets[sheets[0]], { defval: '', raw: true });
-  if (!tab1Rows.length) { console.warn('BOM Tab 1 empty'); return []; }
-
-  var t1c = _mapCols(tab1Rows[0]);
-  if (!t1c.pn) { console.warn('Tab 1: cannot detect Part Number column'); return []; }
-
-  // Build master map keyed by partNumber
-  var masterMap = {};
-  tab1Rows.forEach(function(row) {
-    var pn = t1c.pn ? String(row[t1c.pn] || '').trim() : '';
-    if (!pn || pn.toLowerCase() === 'part number') return;
-    var gn = function(k) { return t1c[k] ? (parseFloat(row[t1c[k]]) || 0) : 0; };
-    var gs = function(k) { return t1c[k] ? String(row[t1c[k]] || '').trim() : ''; };
-    masterMap[pn] = {
-      pn: pn, nm: gs('nm'), desc: gs('desc'), hsn: gs('hsn'),
-      type: gs('type'), rework: gs('rework') || 'No', reworkRef: gs('reworkRef'),
-      subCat: gs('subCat'), cat: gs('cat'), material: gs('material'), revNo: gs('revNo'),
-      totalQty: gn('qty'), uom: gs('uom') || 'PCS',
-      unitRate: gn('unitRate'), curr: gs('curr') || 'INR', exRate: gn('exRate') || 1,
-      unitCostInr: gn('unitCostInr'), totalCost: gn('totalCost'),
-      customDuty: gn('customDuty'), surcharge: gn('surcharge'), totalDuty: gn('totalDuty'),
-      surPct: gn('surPct'), dutyPct: gn('dutyPct'),
-      freightOnly: gn('freightOnly'), otherExp: gn('otherExp'), totalFreight: gn('totalFreight'),
-      landed: gn('landed'), totalBom: gn('totalBom'),
-      supplier: gs('supplier'), country: gs('country'),
-      lead: gs('lead'), finalized: gs('finalized'), sno: gs('sno'),
-    };
-  });
-  console.log('Tab 1: parsed', Object.keys(masterMap).length, 'unique parts');
-
-  /* ── Step 2: Parse SA tabs → build saMap[pn] = [{id, qty, sno, finalized}] ── */
-  var saMap = {}; // partNumber → array of {id, qty, sno, finalized}
-
-  for (var si = 1; si < sheets.length; si++) {
-    var saId   = sheets[si].trim();
-    var saRows = XLSX.utils.sheet_to_json(wb.Sheets[saId], { defval: '', raw: true });
-    if (!saRows.length) continue;
-
-    var sc = _mapCols(saRows[0]);
-    if (!sc.pn) { console.warn('SA tab "' + saId + '": no Part Number col, skipping'); continue; }
-
-    saRows.forEach(function(row) {
-      var pn = String(row[sc.pn] || '').trim();
-      if (!pn || pn.toLowerCase() === 'part number') return;
-      if (!saMap[pn]) saMap[pn] = [];
-      saMap[pn].push({
-        id:        saId,
-        qty:       sc.qty ? (parseFloat(row[sc.qty]) || 0) : 0,
-        sno:       sc.sno       ? String(row[sc.sno]       || '').trim() : '',
-        finalized: sc.finalized ? String(row[sc.finalized] || '').trim() : '',
-      });
-    });
-    console.log('SA tab "' + saId + '": ' + saRows.length + ' rows');
-  }
-
-  /* ── Step 3: Build one DB row per unique part ── */
-  var result = [];
-  Object.keys(masterMap).forEach(function(pn) {
-    var m       = masterMap[pn];
-    var saList  = saMap[pn] || [];         // may be empty if part not in any SA tab
-    var leadRaw = m.lead;
-    var leadDays= parseFloat(leadRaw) || 0;
-
-    // Pack SA map + total qty into sno field
-    var encoded = 'TAB1QTY:' + m.totalQty + '|SAMAP:' + JSON.stringify(saList) + '|' + m.sno;
-
-    result.push({
-      id:                  'PART__' + pn.replace(/[\s\/\\]/g, '_'),
-      sno:                 encoded,
-      finalized:           m.finalized,
-      partNumber:          pn,
-      partName:            m.nm,
-      partDesc:            m.desc,
-      hsnCode:             m.hsn,
-      partType:            m.type,
-      reworkRequired:      m.rework,
-      reworkDrawingRef:    m.reworkRef,
-      partSubCategory:     m.subCat,
-      partCategory:        m.cat,
-      material:            m.material,
-      revisionNo:          m.revNo,
-      quantity:            m.totalQty,    // total qty from Tab 1
-      uom:                 m.uom,
-      unitRateVendor:      m.unitRate,
-      vendorCurrency:      m.curr,
-      exchangeRate:        m.exRate,
-      unitCostInr:         m.unitCostInr,
-      totalUnitCost:       m.totalCost,
-      customDuty:          m.customDuty,
-      surcharge:           m.surcharge,
-      totalCustomDuty:     m.totalDuty,
-      surchargePercent:    m.surPct,
-      dutyPercent:         m.dutyPct,
-      freightOnly:         m.freightOnly,
-      otherExpenses:       m.otherExp,
-      totalFreight:        m.totalFreight,
-      totalUnitLandedCost: m.landed,
-      totalBomCost:        m.totalBom,
-      supplierName:        m.supplier,
-      country:             m.country,
-      leadTime:            leadRaw,
-      subAssemblyId:       saList.map(function(s) { return s.id; }).join(','),
-      urgency:             leadDays > 60 ? 'critical' : leadDays > 30 ? 'high' : leadDays > 13 ? 'medium' : 'low',
-    });
+    partMap[key]  = part;
+    partOrder.push(key);
   });
 
-  console.log('BOM: ' + result.length + ' unique parts across ' + (sheets.length - 1) + ' SA tabs');
-  return result;
+  /* ── STEP 2: Parse sub-assembly tabs (Sheet[1+]) ── */
+  var saCount = sheetNames.length - 1;
+  _prog(true, 'Parsing ' + saCount + ' sub-assembly tab' + (saCount !== 1 ? 's' : '') + '…');
+
+  for (var si = 1; si < sheetNames.length-1; si++) {
+    var saName  = sheetNames[si].trim();   // e.g. "O2C-EC-SA-001"
+    var saSheet = wb.Sheets[sheetNames[si]];
+    var saRows  = XLSX.utils.sheet_to_json(saSheet, { defval: '' });
+
+    saRows.forEach(function (row, ridx) {
+      var pn = _cv(row, ['part number', 'part_number', 'part no', 'part no.', 'partno', 'partnumber', 'part#']) || '';
+      pn = String(pn).trim();
+      if (!pn) return;
+
+      var key     = pn.toLowerCase();
+      var qty     = _cn(row, ['quantity', 'qty', 'qty in sa', 'qty (in sa)']);
+      var sno     = String(_cv(row, ['s.no', 's.no.', 'sno', 's no', 'serial no', 'sl no']) || (ridx + 1));
+      var fin     = String(_cv(row, ['finalized', 'finalised']) || '—');
+
+      if (partMap[key]) {
+        /* ─ Part exists in Tab 1: enrich blanks + append SA entry ─ */
+        var p = partMap[key];
+
+        // Merge descriptive fields that Tab 1 may have left blank
+        if (!p.partDesc)
+          p.partDesc       = String(_cv(row, ['part description', 'part desc', 'description', 'desc']) || p.partDesc || '');
+        if (!p.hsnCode)
+          p.hsnCode        = String(_cv(row, ['hsn code', 'hsn', 'hsncode', 'hsn/sac']) || p.hsnCode || '');
+        if (!p.partType)
+          p.partType       = String(_cv(row, ['part type', 'parttype', 'type']) || p.partType || '');
+        if (!p.reworkRequired || p.reworkRequired === 'No')
+          p.reworkRequired = String(_cv(row, ['rework required', 'rework req', 'rework']) || p.reworkRequired || 'No');
+        if (!p.material)
+          p.material       = String(_cv(row, ['material', 'material of construction']) || p.material || '');
+        if (!p.revisionNo)
+          p.revisionNo     = String(_cv(row, ['revision no', 'rev no', 'revision']) || p.revisionNo || '');
+
+        // Only add one entry per SA tab per part
+        var alreadyIn = p.saBreakdown.some(function (s) { return s.id === saName; });
+        if (!alreadyIn) {
+          p.saBreakdown.push({ id: saName, qty: qty, sno: sno, finalized: fin });
+        }
+
+      } else {
+        /* ─ Part only in SA tab, not in Tab 1 (stub row) ─ */
+        var stub = {
+          id:                   key + '_stub_sa' + si + '_' + ridx,
+          sno:                  sno,
+          finalized:            fin,
+          partNumber:           pn,
+          partName:             String(_cv(row, ['part name', 'partname', 'name']) || ''),
+          partDesc:             String(_cv(row, ['part description', 'part desc', 'description']) || ''),
+          hsnCode:              String(_cv(row, ['hsn code', 'hsn', 'hsncode']) || ''),
+          partType:             String(_cv(row, ['part type', 'parttype', 'type']) || ''),
+          reworkRequired:       String(_cv(row, ['rework required', 'rework req', 'rework']) || 'No'),
+          reworkDrawingRef:     '',
+          partSubCategory:      '',
+          partCategory:         '',
+          material:             String(_cv(row, ['material', 'material of construction']) || ''),
+          revisionNo:           String(_cv(row, ['revision no', 'rev no']) || ''),
+          quantity:             qty,
+          uom:                  String(_cv(row, ['uom', 'unit']) || 'PCS'),
+          unitRateVendor:       0, vendorCurrency: 'INR', exchangeRate: 1,
+          unitCostInr: 0, totalUnitCost: 0, customDuty: 0, surcharge: 0, totalCustomDuty: 0,
+          surchargePercent: 0, dutyPercent: 0, freightOnly: 0, otherExpenses: 0,
+          totalFreight: 0, totalUnitLandedCost: 0, totalBomCost: 0,
+          supplierName: '', country: '', leadTime: '', urgency: 'low',
+          subAssemblyId: saName,
+          saBreakdown:   [{ id: saName, qty: qty, sno: sno, finalized: fin }],
+          tab1Qty:       qty,
+        };
+        partMap[key] = stub;
+        partOrder.push(key);
+      }
+    });
+  }
+
+  /* ── STEP 3: Build subAssemblyId for each part ── */
+  partOrder.forEach(function (key) {
+    var p = partMap[key];
+    if (!p) return;
+    p.subAssemblyId = p.saBreakdown.map(function (s) { return s.id; }).join(',');
+  });
+
+  /* ── STEP 4: Assemble final array (Tab 1 order first, then SA-only stubs) ── */
+  var parts = partOrder.map(function (k) { return partMap[k]; }).filter(Boolean);
+
+  if (!parts.length) { showToast('No valid parts found — check that Tab 1 has a "Part Number" column', 'error'); _prog(false); return; }
+
+  var saTabsFound    = sheetNames.slice(1).filter(function (n) { return n.trim(); }).length;
+  var partsWithSA    = parts.filter(function (p) { return p.saBreakdown.length > 0; }).length;
+  var partsMultiSA   = parts.filter(function (p) { return p.saBreakdown.length > 1; }).length;
+
+  _prog(true, 'Saving ' + parts.length + ' parts to database…');
+
+  var mode        = (document.getElementById('upload-mode') || {}).value || 'replace';
+  var savePromise = (mode === 'replace')
+    ? BomDB.clearAndInsert('bom_parts', parts)
+    : BomDB.putAll('bom_parts', parts);
+
+  savePromise.then(function () {
+    loadBomData(parts);
+    _ucOk('bom',
+      parts.length + ' parts · '
+      + saTabsFound + ' SA tab' + (saTabsFound !== 1 ? 's' : '')
+      + ' · ' + partsWithSA + ' mapped'
+    );
+    showToast(
+      '✓ BOM uploaded: ' + parts.length + ' parts · '
+      + saTabsFound + ' sub-assembly tab' + (saTabsFound !== 1 ? 's' : '')
+      + ' · ' + partsMultiSA + ' parts span multiple SAs',
+      'success'
+    );
+    BomDB.setMeta('bom_uploaded_at', new Date().toISOString());
+    adminRefreshStats();
+    _prog(false);
+  }).catch(function (err) {
+    showToast('DB save error: ' + err.message, 'error');
+    _prog(false);
+  });
 }
 
-/* ═══════════════════════════════════════════════════════
-   STORE INVENTORY PARSER — RAW PASSTHROUGH
-═══════════════════════════════════════════════════════ */
-function _parseStore(wb) {
-  var rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: true });
-  if (!rawRows.length) { console.warn('Store: empty sheet'); return []; }
+/* ══════════════════════════════════════════════
+   STORE INVENTORY PARSER
+   Single-sheet, all columns preserved verbatim.
+══════════════════════════════════════════════ */
+function _parseInv(wb) {
+  var sheetNames = wb.SheetNames;
+  if (!sheetNames.length) { showToast('Excel file appears empty', 'error'); _prog(false); return; }
 
-  var allHeaders = Object.keys(rawRows[0]);
-  var find       = _makeFinder(rawRows[0]);
-  var pnCol      = find('part number','partno','item code','itemcode','code','part no','part#') || allHeaders[0];
+  _prog(true, 'Parsing Store Inventory…');
+  var sheet      = wb.Sheets[sheetNames[0]];
+  var rawRows    = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  var rawHeaders = _extractHeaders(sheet);
 
-  var parsed = rawRows.map(function(row) {
-    var pn = String(row[pnCol] || '').trim();
-    if (!pn || pn.toLowerCase() === 'part number' || pn === '-') return null;
+  if (!rawRows.length) { showToast('No data rows found in Store sheet', 'error'); _prog(false); return; }
 
-    var gn = function(keys) {
-      for (var i = 0; i < keys.length; i++) {
-        var col = find(keys[i]);
-        if (col && row[col] !== undefined && row[col] !== '') return parseFloat(row[col]) || 0;
-      }
-      return 0;
-    };
-    var gs = function(keys) {
-      for (var i = 0; i < keys.length; i++) {
-        var col = find(keys[i]);
-        if (col && row[col] !== undefined && row[col] !== '') return String(row[col]).trim();
-      }
-      return '';
-    };
-
+  var items = rawRows.map(function (row) {
+    var pn   = _cv(row, ['part number', 'part_number', 'part no', 'part no.', 'partno', 'partnumber']) || '';
+    var curr = String(_cv(row, ['currency', 'vendor currency', 'curr']) || 'INR').trim().toUpperCase();
     return {
-      partNumber:    pn,
-      _partName:     gs(['part name','name','item name']),
-      _unitRate:     gn(['unit rate','rate','cost per pcs','cost','price']),
-      _currency:     gs(['currency','vendor currency','curr']) || 'INR',
-      _country:      gs(['country']),
-      _quantity:     gn(['quantity','qty']),
-      _unit:         gs(['unit of measurement','uom','unit']) || 'PCS',
-      _storeInvQty:  gn(['store inventory','store inv','current stock','stock','store qty']),
-      _prodLineQty:  gn(['production line','prod line','line stock','line qty']),
-      _inventory128: gn(['inventory 128','inv 128','128 inventory','128','inv128']),
-      _rawHeaders:   allHeaders,
+      partNumber:    String(pn).trim(),
+      _partName:     String(_cv(row, ['part name', 'partname', 'name']) || ''),
+      _unitRate:     _cn(row, ['unit rate', 'rate', 'unitrate', 'unit price']),
+      _currency:     curr || 'INR',
+      _country:      String(_cv(row, ['country', 'country of origin']) || ''),
+      _quantity:     _cn(row, ['quantity', 'qty', 'total qty']),
+      _unit:         String(_cv(row, ['unit', 'uom', 'unit of measurement']) || 'PCS'),
+      _storeInvQty:  _cn(row, ['store inventory', 'store inv', 'storeinventory', 'current stock', 'currentstock', 'stock']),
+      _prodLineQty:  _cn(row, ['production line', 'prodline', 'prod line', 'prod. line']),
+      _inventory128: _cn(row, ['inventory 128', 'inv 128', 'inventory128']),
       _rawRow:       row,
+      _rawHeaders:   rawHeaders,
     };
-  }).filter(Boolean);
+  }).filter(function (i) { return i.partNumber; });
 
-  console.log('Store: ' + parsed.length + ' rows, ' + allHeaders.length + ' columns');
-  return parsed;
+  if (!items.length) { showToast('No valid rows found — ensure sheet has a "Part Number" column', 'error'); _prog(false); return; }
+
+  _prog(true, 'Saving ' + items.length + ' items…');
+
+  var mode        = (document.getElementById('upload-mode') || {}).value || 'replace';
+  var savePromise = (mode === 'replace')
+    ? BomDB.clearAndInsert('store_inventory', items)
+    : BomDB.putAll('store_inventory', items);
+
+  savePromise.then(function () {
+    loadStoreData(items);
+    _ucOk('inv', items.length + ' items · ' + rawHeaders.length + ' columns');
+    showToast('✓ Store uploaded: ' + items.length + ' items', 'success');
+    BomDB.setMeta('inv_uploaded_at', new Date().toISOString());
+    adminRefreshStats();
+    _prog(false);
+  }).catch(function (err) {
+    showToast('DB save error: ' + err.message, 'error');
+    _prog(false);
+  });
 }
 
-/* ─── Progress / helpers / toast ────────────── */
-function _showProg(m) { document.getElementById('prog-wrap').classList.add('visible'); _setProgLbl(m); }
-function _hideProg()  { document.getElementById('prog-wrap').classList.remove('visible'); }
-function _setProgLbl(m) { var e = document.getElementById('prog-label'); if (e) e.textContent = m; }
-function _fmtTs(v) {
-  if (!v) return '—';
-  var d = new Date(v);
-  return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
-    + ' ' + d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+/* ── Extract clean header row from sheet ────── */
+function _extractHeaders(sheet) {
+  if (!sheet['!ref']) return [];
+  var range = XLSX.utils.decode_range(sheet['!ref']);
+  var headers = [];
+  for (var C = range.s.c; C <= range.e.c; C++) {
+    var cell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
+    var h = cell ? String(cell.v || '').trim() : '';
+    if (h) headers.push(h);
+  }
+  return headers;
 }
-function _setText(id, v) { var e = document.getElementById(id); if (e) e.textContent = v; }
-function _showEl(id)     { var e = document.getElementById(id); if (e) e.style.display = 'block'; }
+
+/* ══════════════════════════════════════════════
+   URGENCY — derived from lead time string
+   "45 days" / "6 weeks" / "2 months" / "60"
+      >60d  → critical
+      >30d  → high
+      >14d  → medium
+      ≤14d  → low
+══════════════════════════════════════════════ */
+function _calcUrgency(lt) {
+  if (!lt) return 'low';
+  var days = _parseDays(lt);
+  if (days === null) return 'low';
+  if (days > 60)  return 'critical';
+  if (days > 30)  return 'high';
+  if (days > 14)  return 'medium';
+  return 'low';
+}
+
+function _parseDays(lt) {
+  lt = String(lt).toLowerCase().trim();
+  var bare = parseFloat(lt);
+  if (!isNaN(bare) && bare > 0) return bare;   // plain number = days
+  var md = lt.match(/([\d.]+)\s*(?:day|days|d\b)/);   if (md)  return parseFloat(md[1]);
+  var mw = lt.match(/([\d.]+)\s*(?:week|weeks|wk|w\b)/); if (mw) return parseFloat(mw[1]) * 7;
+  var mm = lt.match(/([\d.]+)\s*(?:month|months|mo\b)/); if (mm) return parseFloat(mm[1]) * 30;
+  return null;
+}
+
+/* ══════════════════════════════════════════════
+   COLUMN LOOKUP HELPERS
+══════════════════════════════════════════════ */
+
+/**
+ * _cv — Find a value from a row object using a list of possible column names.
+ *       Tries exact match first, then normalised match.
+ */
+function _cv(row, keys) {
+  // Build a normalised → original key map once per row call for performance
+  var normMap = {};
+  for (var rk in row) { normMap[_norm(rk)] = rk; }
+
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    // Exact
+    if (row[k] !== undefined && row[k] !== '') return row[k];
+    // Normalised
+    var nk = _norm(k);
+    if (normMap[nk] !== undefined) {
+      var orig = normMap[nk];
+      if (row[orig] !== undefined && row[orig] !== '') return row[orig];
+    }
+  }
+  return undefined;
+}
+
+/** _cn — Get a numeric value (0 if missing/non-numeric). */
+function _cn(row, keys) {
+  var v = _cv(row, keys);
+  if (v === undefined || v === null || v === '') return 0;
+  var n = parseFloat(String(v).replace(/[,₹$€£¥\s]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+/* ══════════════════════════════════════════════
+   UI HELPERS
+══════════════════════════════════════════════ */
+function _ucOk(type, msg) {
+  var ok = document.getElementById('uc-' + type + '-ok');
+  var ts = document.getElementById('uc-' + type + '-ts');
+  if (ok) { ok.style.display = ''; ok.textContent = '✓ ' + msg; }
+  if (ts) ts.textContent = new Date().toLocaleTimeString('en-IN');
+}
+
+function _prog(show, label) {
+  var w = document.getElementById('prog-wrap');
+  var l = document.getElementById('prog-label');
+  if (w) w.classList.toggle('visible', !!show);
+  if (l && label) l.textContent = label;
+}
+
 function showToast(msg, type) {
-  type = type || '';
   var t = document.getElementById('toast');
-  t.textContent = msg; t.className = 'toast ' + type;
-  void t.offsetHeight; t.classList.add('show');
-  clearTimeout(t._timer); t._timer = setTimeout(function() { t.classList.remove('show'); }, 4500);
+  if (!t) return;
+  t.textContent = msg;
+  t.className   = 'toast show ' + (type || '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function () { t.classList.remove('show'); }, 3800);
 }

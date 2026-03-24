@@ -8,6 +8,7 @@
  *            Total Freight, Total Unit Landed Cost, Supplier, Country,
  *            Lead Time, Urgency
  *   Expandable: SA breakdown pills → SA name : qty each
+ *   Footer:     TOTAL row — sums numeric columns, skips non-numeric
  *
  * Store Display:
  *   Raw columns from upload, values in original currency by default.
@@ -168,6 +169,42 @@ function _renderBomTable() {
   var urgBr = {critical:'#FFBBBB',high:'#FFD0A0',medium:'#FFE97A',low:'#A0E0A0'};
   var COL   = 21; // column count in <thead>
 
+  /* ── Numeric columns to sum for TOTAL row ── */
+  // Keys match the part object fields for each numeric column position
+  var numericKeys = [
+    null,               // Part Number  — skip
+    null,               // Part Name    — skip
+    null,               // Part Desc    — skip
+    null,               // HSN Code     — skip
+    null,               // Part Type    — skip
+    null,               // Rework Req.  — skip
+    null,               // Material     — skip
+    'unitRateVendor',   // Currency / Unit Rate
+    'quantity',         // Total Qty
+    null,               // UOM          — skip
+    'totalUnitCost',    // O2C Unit Cost
+    'customDuty',       // Custom Duty
+    'surchargePercent', // Surcharge %
+    'dutyPercent',      // Duty %
+    'totalFreight',     // Total Freight
+    'totalUnitLandedCost', // Total Unit Landed Cost
+    null,               // Supplier     — skip
+    null,               // Country      — skip
+    null,               // Lead Time    — skip
+    null,               // Urgency      — skip
+    null,               // SA Breakdown — skip
+  ];
+
+  /* Pre-compute column totals over the filtered set */
+  var colTotals = numericKeys.map(function(key) {
+    if (!key) return null;
+    var sum = bomFiltered.reduce(function(acc, p) {
+      var v = p[key];
+      return acc + (typeof v === 'number' ? v : 0);
+    }, 0);
+    return sum;
+  });
+
   tbody.innerHTML = bomFiltered.map(function(p) {
     var uc  = p.urgency || 'low';
     var fn  = function(n){ return (typeof n==='number'&&n!==0)?_fmtN(n,2):'—'; };
@@ -283,11 +320,99 @@ function _renderBomTable() {
     }
 
     return mainRow + expRow;
-  }).join('');
+  }).join('') + _buildBomTotalRow(colTotals, COL);
+}
+
+/* ── TOTAL row ─────────────────────────────────
+   Rendered as a sticky-looking footer row inside <tbody>.
+   Numeric columns: sum of all filtered rows.
+   Non-numeric columns: blank except col-0 which shows "TOTAL".
+──────────────────────────────────────────────── */
+function _buildBomTotalRow(colTotals, totalCols) {
+  if (!bomFiltered.length) return '';
+
+  var fI = function(n){ return n ? '₹' + _fmtN(n, 2) : '—'; };
+  var fn = function(n){ return n ? _fmtN(n, 2) : '—'; };
+  var fP = function(n){ return n ? _fmtN(n, 2) + '%' : '—'; };
+
+  var BASE = 'padding:9px 10px;border-right:1px solid #3D3D3D;vertical-align:middle;white-space:nowrap;border-top:2px solid var(--red)';
+  var NUM  = BASE + ';text-align:right;font-family:var(--FM);font-size:12px';
+
+  // colTotals indices match the column order exactly as rendered in the <tr>
+  // 0=PartNumber(label), 1=PartName, 2=PartDesc, 3=HSN, 4=Type, 5=Rework, 6=Material,
+  // 7=UnitRate, 8=Qty, 9=UOM, 10=TotalUnitCost, 11=CustomDuty, 12=Surcharge%,
+  // 13=Duty%, 14=TotalFreight, 15=TotalUnitLandedCost, 16=Supplier, 17=Country,
+  // 18=LeadTime, 19=Urgency, 20=SABreakdown
+
+  var cells = [
+    /* 0  Part Number  — label */
+    '<td style="' + BASE + ';background:#1A1A1A">'
+      + '<span style="font-family:var(--FH);font-size:13px;font-weight:800;letter-spacing:1.5px;color:white;text-transform:uppercase">TOTAL</span>'
+      + '<div style="font-size:9px;color:#888;font-family:var(--FM);margin-top:2px">' + bomFiltered.length + ' parts</div>'
+      + '</td>',
+    /* 1-6 text columns — blank */
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    /* 7  Unit Rate — sum (shows total of all vendor rates; contextual) */
+    '<td style="' + NUM + ';background:#1C1C1C">'
+      + '<span style="color:#CCC">' + fn(colTotals[7]) + '</span>'
+      + '<div style="font-size:9px;color:#666;margin-top:1px;font-family:var(--FM)">sum</div>'
+      + '</td>',
+    /* 8  Quantity */
+    '<td style="' + NUM + ';background:#1A1A1A">'
+      + '<strong style="font-size:14px;color:white">' + fn(colTotals[8]) + '</strong>'
+      + '</td>',
+    /* 9  UOM — blank */
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    /* 10 Total Unit Cost */
+    '<td style="' + NUM + ';background:#1A1A1A">'
+      + '<strong style="color:#7ABFFF">' + fI(colTotals[10]) + '</strong>'
+      + '</td>',
+    /* 11 Custom Duty */
+    '<td style="' + NUM + ';background:#1A1A1A">'
+      + '<strong style="color:#7ABFFF">' + fI(colTotals[11]) + '</strong>'
+      + '</td>',
+    /* 12 Surcharge % — average makes more sense; show with label */
+    '<td style="' + NUM + ';background:#1A1A1A">'
+      + (bomFiltered.length
+          ? '<span style="color:#AAA">' + _fmtN(colTotals[12] / bomFiltered.length, 2) + '%</span>'
+            + '<div style="font-size:9px;color:#666;margin-top:1px">avg</div>'
+          : '—')
+      + '</td>',
+    /* 13 Duty % — average */
+    '<td style="' + NUM + ';background:#1A1A1A">'
+      + (bomFiltered.length
+          ? '<span style="color:#AAA">' + _fmtN(colTotals[13] / bomFiltered.length, 2) + '%</span>'
+            + '<div style="font-size:9px;color:#666;margin-top:1px">avg</div>'
+          : '—')
+      + '</td>',
+    /* 14 Total Freight */
+    '<td style="' + NUM + ';background:#1A1A1A">'
+      + '<strong style="color:#7ABFFF">' + fI(colTotals[14]) + '</strong>'
+      + '</td>',
+    /* 15 Total Unit Landed Cost — headline number */
+    '<td style="' + NUM + ';background:#111;border-left:2px solid var(--red)">'
+      + '<strong style="font-size:13px;color:white">' + fI(colTotals[15]) + '</strong>'
+      + '<div style="font-size:9px;color:#888;margin-top:2px">total landed</div>'
+      + '</td>',
+    /* 16-20 text columns — blank */
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+    '<td style="' + BASE + ';background:#1C1C1C"></td>',
+  ];
+
+  return '<tr>' + cells.join('') + '</tr>';
 }
 
 function exportBOM() {
   if (!bomFiltered.length) { showToast('No BOM data to export','info'); return; }
+
   var data = bomFiltered.map(function(p) {
     return {
       'Part Number': p.partNumber, 'Part Name': p.partName, 'Part Description': p.partDesc,
@@ -303,10 +428,32 @@ function exportBOM() {
       'SA Breakdown': (p.saBreakdown||[]).map(function(s){return s.id+':'+s.qty;}).join(' | '),
     };
   });
+
+  /* ── TOTAL row at bottom of export ── */
+  var numCols = ['Unit Rate (Vendor)','Total Qty','Total Unit Cost (O2C)','Custom Duty',
+                 'Total Freight','Total Unit Landed Cost'];
+  var pctCols = ['Surcharge %','Duty %'];
+  var totalRow = { 'Part Number': 'TOTAL' };
+
+  numCols.forEach(function(col) {
+    totalRow[col] = bomFiltered.reduce(function(sum, p) {
+      var v = data[bomFiltered.indexOf(p)][col];
+      return sum + (typeof v === 'number' ? v : 0);
+    }, 0);
+  });
+  pctCols.forEach(function(col) {
+    var sum = bomFiltered.reduce(function(s, p) {
+      var v = data[bomFiltered.indexOf(p)][col];
+      return s + (typeof v === 'number' ? v : 0);
+    }, 0);
+    totalRow[col] = bomFiltered.length ? +(sum / bomFiltered.length).toFixed(2) : 0;
+  });
+  data.push(totalRow);
+
   var ws = XLSX.utils.json_to_sheet(data);
   var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Device BOM');
   XLSX.writeFile(wb, 'On2Cook_Device_BOM.xlsx');
-  showToast('✓ Exported ' + bomFiltered.length + ' BOM rows', 'success');
+  showToast('✓ Exported ' + bomFiltered.length + ' BOM rows + TOTAL row', 'success');
 }
 
 /* ══════════════════════════════════════════════════
@@ -410,6 +557,27 @@ function _renderStore() {
   var thBase = 'background:var(--black-3);color:white;padding:10px;font-family:var(--FH);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;white-space:nowrap;border-right:1px solid #3D3D3D;position:sticky;top:0;z-index:20;text-align:left';
   var thead  = rawHeaders.map(function(h){ return '<th style="'+thBase+';min-width:110px">'+_e(h)+'</th>'; }).join('');
 
+  /* Pre-compute per-column totals for the store TOTAL row */
+  var storeTotals = {};
+  rawHeaders.forEach(function(h) {
+    var colNorm = _norm(h);
+    var isNum = filtered.every(function(item) {
+      var sv = String((item._rawRow||{})[h] || '');
+      return sv === '' || (!isNaN(parseFloat(sv)) && isFinite(sv));
+    }) && filtered.some(function(item) {
+      var sv = String((item._rawRow||{})[h] || '');
+      return sv !== '' && !isNaN(parseFloat(sv)) && isFinite(sv);
+    });
+    var isMoney = isNum && (colNorm.includes('rate')||colNorm.includes('cost')||colNorm.includes('value')||colNorm.includes('amount')||colNorm.includes('price'));
+    var isQty   = isNum && (colNorm.includes('qty')||colNorm.includes('quantity')||colNorm.includes('stock')||colNorm.includes('inv'));
+    if (isMoney || isQty) {
+      storeTotals[h] = filtered.reduce(function(sum, item) {
+        var sv = String((item._rawRow||{})[h] || '');
+        return sum + (sv !== '' && !isNaN(parseFloat(sv)) ? parseFloat(sv) : 0);
+      }, 0);
+    }
+  });
+
   var tbody = filtered.map(function(item) {
     var rawRow = item._rawRow || {};
     var curr   = item._currency || 'INR';
@@ -466,6 +634,27 @@ function _renderStore() {
     return '<tr onmouseover="this.style.background=\'#F8FBFF\'" onmouseout="this.style.background=\'\'">' + cells + '</tr>';
   }).join('');
 
+  /* ── Store TOTAL row ── */
+  var BASE_T = 'padding:9px 10px;border-right:1px solid #3D3D3D;vertical-align:middle;white-space:nowrap;border-top:2px solid var(--red)';
+  var storeTotalCells = rawHeaders.map(function(h, idx) {
+    if (idx === 0) {
+      return '<td style="' + BASE_T + ';background:#1A1A1A">'
+        + '<span style="font-family:var(--FH);font-size:13px;font-weight:800;letter-spacing:1.5px;color:white;text-transform:uppercase">TOTAL</span>'
+        + '<div style="font-size:9px;color:#888;font-family:var(--FM);margin-top:2px">' + filtered.length + ' items</div>'
+        + '</td>';
+    }
+    if (storeTotals[h] !== undefined) {
+      var colNorm = _norm(h);
+      var isMoney = colNorm.includes('rate')||colNorm.includes('cost')||colNorm.includes('value')||colNorm.includes('amount')||colNorm.includes('price');
+      var disp = isMoney
+        ? '<strong style="color:#7ABFFF;font-family:var(--FM);font-size:12px">₹' + _fmtN(storeTotals[h], 2) + '</strong>'
+        : '<strong style="color:white;font-family:var(--FM);font-size:12px">' + _fmtN(storeTotals[h], 2) + '</strong>';
+      return '<td style="' + BASE_T + ';background:#1A1A1A;text-align:right">' + disp + '</td>';
+    }
+    return '<td style="' + BASE_T + ';background:#1C1C1C"></td>';
+  }).join('');
+  var storeTotalRow = filtered.length ? '<tr>' + storeTotalCells + '</tr>' : '';
+
   area.innerHTML = statsRow + fxPanel + toolbar
     + '<div class="table-card">'
     + '<div class="tc-header"><div class="tc-title">Store Inventory</div>'
@@ -474,7 +663,7 @@ function _renderStore() {
     + '</div></div>'
     + '<div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 380px);min-height:420px">'
     + '<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
-    + '<thead><tr>' + thead + '</tr></thead><tbody>' + tbody + '</tbody>'
+    + '<thead><tr>' + thead + '</tr></thead><tbody>' + tbody + storeTotalRow + '</tbody>'
     + '</table></div></div>';
 }
 
@@ -519,10 +708,30 @@ function exportStore() {
     return row;
   });
 
+  /* ── TOTAL row at bottom ── */
+  var totalRow = { [rawHeaders[0]]: 'TOTAL' };
+  rawHeaders.forEach(function(h) {
+    var colNorm = _norm(h);
+    var isNum = allStore.every(function(item) {
+      var sv = String((item._rawRow||{})[h] || '');
+      return sv === '' || (!isNaN(parseFloat(sv)) && isFinite(sv));
+    }) && allStore.some(function(item) {
+      var sv = String((item._rawRow||{})[h] || '');
+      return sv !== '' && !isNaN(parseFloat(sv)) && isFinite(sv);
+    });
+    if (isNum) {
+      totalRow[h] = allStore.reduce(function(sum, item) {
+        var sv = String((item._rawRow||{})[h] || '');
+        return sum + (sv !== '' && !isNaN(parseFloat(sv)) ? parseFloat(sv) : 0);
+      }, 0);
+    }
+  });
+  data.push(totalRow);
+
   var ws  = XLSX.utils.json_to_sheet(data);
   var wb2 = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb2, ws, 'Store Inventory');
   XLSX.writeFile(wb2, 'On2Cook_Store_Inventory.xlsx');
-  showToast('✓ Exported' + (Object.keys(storeConvertCol).some(function(k){return storeConvertCol[k];}) ? ' with conversions' : ''), 'success');
+  showToast('✓ Exported' + (Object.keys(storeConvertCol).some(function(k){return storeConvertCol[k];}) ? ' with conversions' : '') + ' + TOTAL row', 'success');
 }
 
 /* ── Shared helpers ───────────────────────────── */
