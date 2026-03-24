@@ -17,7 +17,7 @@ async function runFeasibility() {
   }
 
   // Use in-memory data (already loaded by app.js on init)
-  // Re-fetch from Supabase to get latest
+  // Re-fetch from database to get latest
   let invMap = {}, prodMap = {}, invLoaded = false, prodLoaded = false;
   try {
     const invRows = allInventory.length ? allInventory : await BomDB.getAll('store_inventory');

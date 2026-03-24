@@ -1,843 +1,556 @@
 /**
- * app.js — Main application state + BOM, Inventory, Production Line tab rendering
- * Global state: allParts, allInventory, allProduction
+ * app.js — On2Cook BOM Portal
+ *
+ * BOM Display:
+ *   Columns: Part Number, Part Name, Part Desc, HSN Code, Part Type,
+ *            Rework Required, Material, Currency (Unit Rate), Total Qty,
+ *            UOM, Total Unit Cost (O2C), Custom Duty, Surcharge%, Duty%,
+ *            Total Freight, Total Unit Landed Cost, Supplier, Country,
+ *            Lead Time, Urgency
+ *   Expandable: SA breakdown pills → SA name : qty each
+ *
+ * Store Display:
+ *   Raw columns from upload, values in original currency by default.
+ *   Per-currency Convert toggle → converts for display AND export.
  */
 
-/* ═══ GLOBAL STATE ══════════════════════════════════════ */
-let allParts      = [];
-let allInventory  = [];
-let allProduction = [];
-let filtered      = [];
-let sortKey       = 'leadTimeDays';
-let sortDir       = 'desc';
-let expandedRows  = new Set();
-let searchTerm    = '';
+/* ── Global state ─────────────────────────────── */
+var allBom       = [];   // array of unique-part rows (decoded from DB)
+var allStore     = [];   // store inventory rows
 
-/* ═══ INIT ══════════════════════════════════════════════ */
-document.addEventListener('DOMContentLoaded', async () => {
-  _dbUI('yellow', 'Connecting to Supabase…');
+var bomFiltered  = [];
+var bomSearch    = '';
+var bomSAFilter  = '';
+var bomTypeFilter= '';
+var bomUrgFilter = '';
+var bomSortKey   = 'partNumber';
+var bomSortDir   = 'asc';
+
+var storeSearch     = '';
+var bomExpanded     = {};   // partNumber → bool
+
+// Store: fx rates + convert flags (persisted through export)
+var fxRates         = { USD:84, CNY:12, EUR:91, GBP:107 };
+var storeConvertCol = {};   // currency → bool (if true, convert for display AND export)
+
+/* ── Init ──────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', async function() {
+  _dbUI('yellow', 'Connecting…');
   try {
     await BomDB.open();
-    const [parts, inv, prod] = await Promise.all([
-      BomDB.getAll('bom_parts'),
-      BomDB.getAll('store_inventory'),
-      BomDB.getAll('production_line'),
-    ]);
-    loadPartsData(parts);
-    loadInventoryData(inv);
-    loadProductionData(prod);
-    const total = parts.length + inv.length + prod.length;
-    _dbUI('green', `Supabase · ${parts.length}p / ${inv.length}i / ${prod.length}pl`);
-    if (total > 0) showToast(`✓ Loaded ${parts.length} BOM · ${inv.length} inventory · ${prod.length} production`, 'success');
-    else _dbUI('green', 'Supabase connected — no data yet');
-  } catch (err) {
-    _dbUI('', 'Connection Error');
-    console.error('DB init:', err);
-    showToast('Supabase error: ' + err.message, 'error');
+    var res = await Promise.all([BomDB.getAll('bom_parts'), BomDB.getAll('store_inventory')]);
+    loadBomData(res[0]);
+    loadStoreData(res[1]);
+    _dbUI('green', 'database · ' + res[0].length + ' parts · ' + res[1].length + ' store');
+    if (res[0].length || res[1].length)
+      showToast('✓ Loaded ' + res[0].length + ' parts · ' + res[1].length + ' store items', 'success');
+    else
+      _dbUI('green', 'connected — no data yet');
+  } catch(err) {
+    _dbUI('', 'Error');
+    showToast('DB error: ' + err.message, 'error');
   }
 });
 
 function _dbUI(cls, txt) {
-  const d = document.getElementById('db-dot'); if (d) d.className = 'db-dot ' + cls;
-  const t = document.getElementById('db-status-text'); if (t) t.textContent = txt;
+  var d = document.getElementById('db-dot'); if (d) d.className = 'db-dot ' + cls;
+  var t = document.getElementById('db-status-text'); if (t) t.textContent = txt;
 }
 
-/* ═══ DATA LOADERS ══════════════════════════════════════ */
-function loadPartsData(parts) {
-  allParts = parts || [];
-  expandedRows.clear();
-  populateFilters();
-  applyFilters();
-  updateBomStats();
-  renderAnalysis();
-}
+function loadBomData(rows)   { allBom = rows || []; bomExpanded = {}; _populateBomFilters(); _applyBomFilters(); _renderBomStats(); }
+function loadStoreData(rows) { allStore = rows || []; _renderStore(); }
 
-function loadInventoryData(inv) {
-  allInventory = inv || [];
-  updateInventoryStatus(allInventory);
-  renderInventoryTable();
-  renderAnalysis();
-}
-
-function loadProductionData(prod) {
-  allProduction = prod || [];
-  updateProductionStatus(allProduction);
-  renderProductionTable();
-  renderAnalysis();
-}
-
-/* ═══ TAB SWITCHING ══════════════════════════════════════ */
 function switchTab(name) {
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
   document.getElementById('panel-' + name).classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
-  if (name === 'planning') runFeasibility();
-  if (name === 'analysis') renderAnalysis();
 }
 
-/* ═══════════════════════════════════════════════════════
-   BOM TAB
-═══════════════════════════════════════════════════════ */
-function handleSearch(val) { searchTerm = val.trim().toLowerCase(); applyFilters(); }
+/* ══════════════════════════════════════════════════
+   DEVICE BOM TAB
+══════════════════════════════════════════════════ */
+function handleBomSearch(v) { bomSearch = v.trim().toLowerCase(); _applyBomFilters(); }
 
-function applyFilters() {
-  const type=document.getElementById('filter-type').value;
-  const urg=document.getElementById('filter-urgency').value;
-  const supp=document.getElementById('filter-supplier').value;
-  const ctry=document.getElementById('filter-country').value;
-  const sa=document.getElementById('filter-sa').value;
-  const rw=document.getElementById('filter-rework').value;
-  filtered = allParts.filter(p => {
-    if (searchTerm && !((p.partNumber||'')+(p.partName||'')).toLowerCase().includes(searchTerm)) return false;
-    if (type && p.partType!==type) return false;
-    if (urg  && p.urgency!==urg) return false;
-    if (supp && p.supplierName!==supp) return false;
-    if (ctry && p.country!==ctry) return false;
-    if (rw   && p.reworkRequired!==rw) return false;
-    if (sa   && !(p.subAssemblies||[]).some(s=>s.id===sa)) return false;
+function _applyBomFilters() {
+  bomFiltered = allBom.filter(function(p) {
+    if (bomSearch && !(p.partNumber + ' ' + p.partName).toLowerCase().includes(bomSearch)) return false;
+    if (bomSAFilter) {
+      var ids = (p.subAssemblyId || '').split(',').map(function(s){return s.trim();}).filter(Boolean);
+      if (!ids.includes(bomSAFilter)) return false;
+    }
+    if (bomTypeFilter && p.partType !== bomTypeFilter) return false;
+    if (bomUrgFilter  && p.urgency  !== bomUrgFilter)  return false;
     return true;
   });
-  sortFiltered(); renderBomTable(); updateActiveCount();
+  _sortBom();
+  _renderBomTable();
+  _renderBomStats();
 }
 
-function clearFilters() {
-  document.getElementById('search-input').value='';
-  ['filter-type','filter-urgency','filter-supplier','filter-country','filter-sa','filter-rework']
-    .forEach(id=>{document.getElementById(id).value='';});
-  searchTerm='';
-  clearFxRate();
-  applyFilters();
-}
-
-function updateActiveCount() {
-  const el=document.getElementById('active-count'); if(!el)return;
-  const total=allParts.length, shown=filtered.length;
-  if(!total){el.innerHTML='';return;}
-  el.innerHTML=shown<total?`Showing <strong>${shown}</strong> of <strong>${total}</strong> parts`:`<strong>${total}</strong> parts`;
-}
-
-function sortCol(key) {
-  sortDir=(sortKey===key)?(sortDir==='asc'?'desc':'asc'):(key==='leadTimeDays'?'desc':'asc');
-  sortKey=key; sortFiltered(); renderBomTable(); _sortHdrs();
-}
-
-function sortFiltered() {
-  const uo={critical:0,high:1,medium:2,low:3};
-  filtered.sort((a,b)=>{
-    let av=a[sortKey]??(sortKey==='urgency'?99:''), bv=b[sortKey]??(sortKey==='urgency'?99:'');
-    if(sortKey==='urgency'){av=uo[av]??4;bv=uo[bv]??4;}
-    if(typeof av==='number'&&typeof bv==='number') return sortDir==='asc'?av-bv:bv-av;
-    return sortDir==='asc'?String(av).localeCompare(String(bv)):String(bv).localeCompare(String(av));
+function _sortBom() {
+  var urgO = { critical:0, high:1, medium:2, low:3 };
+  bomFiltered.sort(function(a, b) {
+    var av = a[bomSortKey] !== undefined ? a[bomSortKey] : '';
+    var bv = b[bomSortKey] !== undefined ? b[bomSortKey] : '';
+    if (bomSortKey === 'urgency') { av = urgO[av]||4; bv = urgO[bv]||4; }
+    if (typeof av === 'number' && typeof bv === 'number') return bomSortDir==='asc' ? av-bv : bv-av;
+    return bomSortDir==='asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
   });
 }
 
-function _sortHdrs() {
-  document.querySelectorAll('#bom-table thead th').forEach(th=>{
-    th.classList.remove('sort-asc','sort-desc');
-    if(th.getAttribute('onclick')===`sortCol('${sortKey}')`) th.classList.add(sortDir==='asc'?'sort-asc':'sort-desc');
+function bomSort(key) {
+  bomSortDir = bomSortKey === key ? (bomSortDir==='asc'?'desc':'asc') : 'asc';
+  bomSortKey = key;
+  _sortBom(); _renderBomTable();
+  document.querySelectorAll('#bom-head th[data-k]').forEach(function(th) {
+    th.classList.remove('sa','sd');
+    if (th.getAttribute('data-k') === key) th.classList.add(bomSortDir==='asc'?'sa':'sd');
   });
 }
 
-function renderBomTable() {
-  const tbody=document.getElementById('bom-tbody');
-  const noData=!allParts.length, noMatch=allParts.length>0&&filtered.length===0;
-  document.getElementById('bom-table').style.display=filtered.length?'table':'none';
-  const es=document.getElementById('empty-state');
-  if(noData){es.style.display='block';es.querySelector('.empty-title').textContent='No BOM Data';es.querySelector('.empty-sub').textContent='Ask admin to upload BOM file';}
-  else if(noMatch){es.style.display='block';es.querySelector('.empty-title').textContent='No Matching Parts';es.querySelector('.empty-sub').textContent='Adjust search or filters';}
-  else es.style.display='none';
-  document.getElementById('tbl-meta').textContent=filtered.length?`${filtered.length} part${filtered.length!==1?'s':''}`:noData?'No data loaded':'';
-  tbody.innerHTML=filtered.map(p=>_bomRow(p)).join('');
-  tbody.querySelectorAll('.expand-btn').forEach(btn=>btn.addEventListener('click',()=>toggleExpand(btn.dataset.pn)));
-  _sortHdrs();
+function clearBomFilters() {
+  bomSearch=''; bomSAFilter=''; bomTypeFilter=''; bomUrgFilter='';
+  ['bom-search','bom-sa','bom-type','bom-urg'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
+  _applyBomFilters();
 }
 
-function _bomRow(p) {
-  const urg=p.urgency||'low', hasDet=(p.subAssemblies&&p.subAssemblies.length)||p.individualQty>0, isOpen=expandedRows.has(p.partNumber);
-  const isFx=_isFxPart(p);
-  const fmt=n=>(typeof n==='number'&&n>0)?'₹'+n.toLocaleString('en-IN',{maximumFractionDigits:2}):'—';
-  const fmtR=pt=>{
-    const fx=_fxVendorRate(pt);
-    if(!fx)return'—';
-    const sym=fx.currency==='USD'?'$':fx.currency==='EUR'?'€':fx.currency==='GBP'?'£':fx.currency==='INR'?'₹':fx.currency;
-    if(fx.converted){
-      return`<span>₹${fx.rate.toLocaleString('en-IN',{maximumFractionDigits:2})}<span class="fx-badge">FX</span></span>`;
+function toggleBomRow(pn) {
+  bomExpanded[pn] = !bomExpanded[pn];
+  var row = document.getElementById('bom-exp-' + _eid(pn));
+  var btn = document.getElementById('bom-btn-' + _eid(pn));
+  if (row) row.style.display = bomExpanded[pn] ? '' : 'none';
+  if (btn) {
+    btn.textContent = bomExpanded[pn] ? '▲ hide' : '▼ breakdown';
+    btn.style.background = bomExpanded[pn] ? 'var(--red)' : '#444';
+  }
+}
+
+function _populateBomFilters() {
+  var saSet   = new Set();
+  var typeSet = new Set();
+  allBom.forEach(function(p) {
+    (p.subAssemblyId || '').split(',').forEach(function(s){var t=s.trim();if(t)saSet.add(t);});
+    if (p.partType) typeSet.add(p.partType);
+  });
+  _fillSel('bom-sa',   Array.from(saSet).sort(),   'All Sub-Assemblies');
+  _fillSel('bom-type', Array.from(typeSet).sort(),  'All Part Types');
+}
+
+function _renderBomStats() {
+  var saSet = new Set();
+  allBom.forEach(function(p){ (p.subAssemblyId||'').split(',').forEach(function(s){var t=s.trim();if(t)saSet.add(t);}); });
+  var tv = allBom.reduce(function(s,p){return s+(p.totalUnitLandedCost||0);},0);
+  _t('bs-total', allBom.length || '—');
+  _t('bs-crit',  allBom.filter(function(p){return p.urgency==='critical';}).length || '—');
+  _t('bs-high',  allBom.filter(function(p){return p.urgency==='high';}).length    || '—');
+  _t('bs-sa',    saSet.size || '—');
+  _t('bs-val',   tv ? ('₹' + _fmtN(tv,0)) : '—');
+  _t('bom-count', bomFiltered.length + ' of ' + allBom.length + ' parts');
+}
+
+/* ── BOM Table ─────────────────────────────────── */
+function _renderBomTable() {
+  var tbody = document.getElementById('bom-tbody');
+  var empty = document.getElementById('bom-empty');
+
+  if (!allBom.length) {
+    if (tbody) tbody.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    _t('bom-meta','No data'); return;
+  }
+  if (empty) empty.style.display = 'none';
+  _t('bom-meta', bomFiltered.length + ' unique parts');
+  if (!tbody) return;
+
+  var urgBg = {critical:'#FFEAEA',high:'#FFF3EA',medium:'#FFFBEA',low:'#EAFBEA'};
+  var urgFg = {critical:'#C80000',high:'#D46000',medium:'#B89000',low:'#2A7D2A'};
+  var urgBr = {critical:'#FFBBBB',high:'#FFD0A0',medium:'#FFE97A',low:'#A0E0A0'};
+  var COL   = 21; // column count in <thead>
+
+  tbody.innerHTML = bomFiltered.map(function(p) {
+    var uc  = p.urgency || 'low';
+    var fn  = function(n){ return (typeof n==='number'&&n!==0)?_fmtN(n,2):'—'; };
+    var fI  = function(n){ return (typeof n==='number'&&n!==0)?'₹'+_fmtN(n,2):'—'; };
+    var fP  = function(n){ return (typeof n==='number'&&n!==0)?_fmtN(n,2)+'%':'—'; };
+
+    /* SA breakdown pills */
+    var saList  = p.saBreakdown || [];  // [{id,qty,sno,finalized}]
+    var pnSafe  = _eid(p.partNumber);
+    var isExp   = !!bomExpanded[p.partNumber];
+
+    var saCell;
+    if (!saList.length) {
+      saCell = '<span style="color:#AAA;font-size:10px;font-family:var(--FM)">no SA data</span>';
+    } else {
+      // Show first pill + count badge + expand toggle
+      var first = saList[0];
+      saCell = '<div style="display:flex;flex-direction:column;gap:4px">'
+        + '<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
+        + '<span style="background:#1E1E1E;color:white;padding:2px 7px;font-family:var(--FM);font-size:9.5px;white-space:nowrap">'
+        + _e(first.id) + ': <strong>' + _fmtN(first.qty,2) + '</strong></span>'
+        + (saList.length > 1
+          ? '<button id="bom-btn-'+pnSafe+'" onclick="toggleBomRow(\''+_ea(p.partNumber)+'\')" '
+            + 'style="background:'+(isExp?'var(--red)':'#444')+';color:white;border:none;padding:2px 8px;font-family:var(--FH);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.3px">'
+            + (isExp?'▲ hide':'▼ breakdown')
+            + ' <span style="opacity:.7;font-size:9px">+' + (saList.length-1) + '</span>'
+            + '</button>'
+          : '')
+        + '</div></div>';
     }
-    return sym+pt.vendorUnitRate.toLocaleString('en-IN',{maximumFractionDigits:2});
-  };
-  const fP=n=>n>0?n+'%':'—', fD=d=>d>0?d+' days':'—';
-  const mr=`<tr data-pn="${e(p.partNumber)}" data-urgency="${urg}" class="${isOpen?'row-expanded':''}" style="${isFx?'background:#FFFDF0':''}">
-  <td class="col-expand">${hasDet?`<button class="expand-btn ${isOpen?'open':''}" data-pn="${e(p.partNumber)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>`:'<span style="width:26px;display:inline-block"></span>'}</td>
-  <td class="col-pno"><span class="cell-pno">${e(p.partNumber)}</span></td>
-  <td><span class="cell-name">${e(p.partName)}</span></td>
-  <td title="${e(p.partDesc)}"><span class="cell-desc">${e(p.partDesc)||'—'}</span></td>
-  <td><span style="font-family:var(--font-mono);font-size:11.5px">${e(p.hsnCode)||'—'}</span></td>
-  <td>${p.partType?`<span class="tag tag-type">${e(p.partType)}</span>`:'—'}</td>
-  <td>${_rwBadge(p.reworkRequired)}</td>
-  <td title="${e(p.material)}" style="max-width:160px;overflow:hidden;text-overflow:ellipsis">${e(p.material)||'—'}</td>
-  <td class="cell-num">${p.qty>0?p.qty:'—'}</td>
-  <td style="font-family:var(--font-mono);font-size:11.5px">${e(p.uom)||'—'}</td>
-  <td class="cell-num">${fmtR(p)}</td>
-  <td class="cell-num" style="font-weight:600">${fmt(p.totalUnitCost)}</td>
-  <td class="cell-num">${fmt(p.customDuty)}</td>
-  <td class="cell-num">${fP(p.surchargePercent)}</td>
-  <td class="cell-num">${fP(p.dutyPercent)}</td>
-  <td class="cell-num">${fmt(p.totalFreight)}</td>
-  <td class="cell-num" style="font-weight:700">${fmt(p.landedCost)}</td>
-  <td title="${e(p.supplierName)}" style="max-width:170px;overflow:hidden;text-overflow:ellipsis">${e(p.supplierName)||'—'}</td>
-  <td>${e(p.country)||'—'}</td>
-  <td style="font-family:var(--font-mono);font-size:12px">${fD(p.leadTimeDays)}</td>
-  <td>${_urgBadge(urg)}</td>
-</tr>`;
-  const er=hasDet?`<tr class="expansion-row ${isOpen?'open':''}" data-exp="${e(p.partNumber)}"><td colspan="21">${_expansion(p)}</td></tr>`:'';
-  return mr+er;
-}
 
-function _expansion(p) {
-  const tot=(p.subAssemblies||[]).reduce((s,sa)=>s+sa.qty,0), grand=tot+(p.individualQty||0);
-  let rows=(p.subAssemblies||[]).map(sa=>`<tr><td><span class="sa-badge">${e(sa.id)}</span></td><td>${e(sa.name)}</td><td class="cell-num" style="font-weight:600">${sa.qty}</td><td>${e(p.uom||'PCS')}</td></tr>`).join('');
-  if(p.individualQty>0) rows+=`<tr><td><span class="sa-ind-badge">INDIVIDUAL</span></td><td>Direct use — not part of any sub-assembly</td><td class="cell-num" style="font-weight:600">${p.individualQty}</td><td>${e(p.uom||'PCS')}</td></tr>`;
-  return `<div class="exp-inner"><div class="exp-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Sub-Assembly Breakdown — ${e(p.partNumber)}</div><div class="sa-table-wrap"><table class="sa-table"><thead><tr><th style="min-width:160px">Sub-Assembly ID</th><th style="min-width:240px">Name</th><th style="min-width:80px;text-align:right">Qty Used</th><th style="min-width:70px">UOM</th></tr></thead><tbody>${rows}<tr class="sa-total-row"><td colspan="2" style="font-family:var(--font-h);text-transform:uppercase;letter-spacing:.5px">TOTAL QTY REQUIRED</td><td style="text-align:right;font-size:14px">${grand}</td><td>${e(p.uom||'PCS')}</td></tr></tbody></table></div></div>`;
-}
+    /* urgency badge */
+    var urgBadge = '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;font-family:var(--FH);font-size:10px;font-weight:700;background:'+urgBg[uc]+';color:'+urgFg[uc]+';border:1px solid '+urgBr[uc]+'">'
+      + '<span style="width:5px;height:5px;border-radius:50%;background:'+urgFg[uc]+'"></span>'
+      + uc.charAt(0).toUpperCase()+uc.slice(1)+'</span>';
 
-function toggleExpand(pn) {
-  const safe=CSS.escape(pn);
-  const mr=document.querySelector(`tr[data-pn="${safe}"]`), er=document.querySelector(`tr[data-exp="${safe}"]`), btn=document.querySelector(`.expand-btn[data-pn="${safe}"]`);
-  if(!er)return;
-  if(expandedRows.has(pn)){expandedRows.delete(pn);er.classList.remove('open');mr?.classList.remove('row-expanded');btn?.classList.remove('open');}
-  else{expandedRows.add(pn);er.classList.add('open');mr?.classList.add('row-expanded');btn?.classList.add('open');}
-}
+    /* rework */
+    var rwOk = (p.reworkRequired==='Yes'||p.reworkRequired==='YES'||p.reworkRequired==='Y');
+    var rwBadge = rwOk
+      ? '<span style="background:#FFF0F0;color:#C80000;padding:2px 7px;font-family:var(--FH);font-size:10px;font-weight:700">YES</span>'
+      : '<span style="background:#F4F4F4;color:#999;padding:2px 7px;font-family:var(--FH);font-size:10px">No</span>';
 
-function updateBomStats() {
-  if(!allParts.length){['stat-total','stat-crit','stat-high','stat-sa','stat-vendors'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='—';});return;}
-  _s('stat-total',allParts.length);
-  _s('stat-crit',allParts.filter(p=>p.urgency==='critical').length);
-  _s('stat-high',allParts.filter(p=>p.urgency==='high').length);
-  _s('stat-vendors',new Set(allParts.map(p=>p.supplierName).filter(Boolean)).size);
-  const ss=new Set(); allParts.forEach(p=>(p.subAssemblies||[]).forEach(sa=>ss.add(sa.id)));
-  _s('stat-sa',ss.size);
-}
+    /* currency + rate in one cell */
+    var rateCell = '<div style="text-align:right">'
+      + '<div style="font-family:var(--FM);font-size:11.5px;font-weight:600">' + fn(p.unitRateVendor) + '</div>'
+      + '<div style="font-size:9px;color:#999;margin-top:1px;font-family:var(--FM)">' + _e(p.vendorCurrency) + '</div>'
+      + '</div>';
 
-function populateFilters() {
-  _popSel('filter-type',_uv('partType'),'All Part Types');
-  _popSel('filter-supplier',_uv('supplierName'),'All Suppliers');
-  _popSel('filter-country',_uv('country'),'All Countries');
-  const sm={};
-  allParts.forEach(p=>(p.subAssemblies||[]).forEach(sa=>{sm[sa.id]=true;}));
-  const el=document.getElementById('filter-sa'); if(!el)return;
-  el.innerHTML='<option value="">All Sub-Assemblies</option>';
-  Object.keys(sm).sort().forEach(id=>{const o=document.createElement('option');o.value=id;o.textContent=id;el.appendChild(o);});
-}
-function _uv(f){return[...new Set(allParts.map(p=>p[f]).filter(Boolean))].sort();}
-function _popSel(id,vals,ph){const el=document.getElementById(id);if(!el)return;el.innerHTML=`<option value="">${ph}</option>`;vals.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;el.appendChild(o);});}
+    /* main row */
+    var td = function(v,s,mw){ return _td(v,s,mw); };
+    var mainRow = '<tr onmouseover="this.style.background=\'#FFF7F7\'" onmouseout="this.style.background=\'\'">'
+      + td('<span style="font-family:var(--FM);font-size:11.5px;color:#D10000;font-weight:600">' + _e(p.partNumber) + '</span>')
+      + td('<strong style="font-size:12px">' + _e(p.partName) + '</strong>', '', 160)
+      + td(_e(p.partDesc)||'—', 'color:#666;font-size:11px', 160)
+      + td('<span style="font-family:var(--FM);font-size:11px">' + (_e(p.hsnCode)||'—') + '</span>')
+      + td(p.partType ? '<span style="background:#EEF2FF;color:#3344AA;padding:2px 7px;font-family:var(--FH);font-size:10px;font-weight:600">' + _e(p.partType) + '</span>' : '—')
+      + td(rwBadge)
+      + td(_e(p.material)||'—','font-size:11px',120)
+      + '<td style="padding:8px 10px;border-right:1px solid #EEE;vertical-align:middle">' + rateCell + '</td>'
+      + _tdr('<strong style="font-size:13px">' + fn(p.quantity) + '</strong>')
+      + td('<span style="font-family:var(--FM);font-size:11px">' + (_e(p.uom)||'—') + '</span>')
+      + _tdr(fI(p.totalUnitCost))
+      + _tdr(fI(p.customDuty))
+      + _tdr(fP(p.surchargePercent))
+      + _tdr(fP(p.dutyPercent))
+      + _tdr(fI(p.totalFreight))
+      + _tdr('<strong>' + fI(p.totalUnitLandedCost) + '</strong>')
+      + td(_e(p.supplierName)||'—','font-size:11px',130)
+      + td(_e(p.country)||'—','font-size:11px')
+      + '<td style="padding:8px 10px;border-right:1px solid #EEE;vertical-align:middle">'
+        + '<span style="font-family:var(--FM);font-size:11px">' + (_e(p.leadTime)||'—') + '</span>'
+        + '</td>'
+      + td(urgBadge)
+      + '<td style="padding:8px 10px;border-right:1px solid #EEE;vertical-align:middle;min-width:170px">' + saCell + '</td>'
+      + '</tr>';
 
-/* ═══════════════════════════════════════════════════════
-   INVENTORY TAB
-═══════════════════════════════════════════════════════ */
-let invSearch='', invStatusFilter='';
+    /* expanded breakdown row */
+    var expRow = '';
+    if (saList.length > 1) {
+      var sumSA = saList.reduce(function(s,r){return s+(r.qty||0);},0);
+      var saRowsHtml = saList.map(function(r, idx) {
+        return '<tr style="background:' + (idx%2===0?'#EEEEF8':'#E6E6F2') + '">'
+          + '<td style="padding:6px 12px 6px 32px;border-right:1px solid #CCC;font-family:var(--FM);font-size:10.5px;white-space:nowrap">'
+          + '<span style="width:5px;height:5px;border-radius:50%;background:var(--red);display:inline-block;margin-right:6px;vertical-align:middle"></span>'
+          + _e(r.id) + '</td>'
+          + '<td style="padding:6px 14px;border-right:1px solid #CCC;text-align:right;font-family:var(--FM);font-size:12.5px;font-weight:700;color:#0060A0">' + _fmtN(r.qty||0,2) + '</td>'
+          + '<td style="padding:6px 14px;border-right:1px solid #CCC;font-family:var(--FM);font-size:10px;color:#888">' + (_e(r.finalized)||'—') + '</td>'
+          + '<td style="padding:6px 14px;font-family:var(--FM);font-size:10px;color:#999">' + (_e(r.sno)||'—') + '</td>'
+          + '</tr>';
+      }).join('');
 
-function handleInvSearch(val){ invSearch=val.trim().toLowerCase(); renderInventoryTable(); }
-function filterInvStatus(val){ invStatusFilter=val; renderInventoryTable(); }
-
-function renderInventoryTable() {
-  const area=document.getElementById('inv-table-area'); if(!area)return;
-  if(!allInventory.length){
-    area.innerHTML=`<div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">No Inventory Data</div><div class="empty-sub">Ask admin to upload the Store Inventory file</div></div>`;
-    return;
-  }
-  let data=allInventory;
-  if(invSearch) data=data.filter(i=>(i.itemCode+' '+i.itemName).toLowerCase().includes(invSearch));
-  if(invStatusFilter) data=data.filter(i=>i.stockStatus===invStatusFilter);
-
-  // Summary cards
-  const totalVal=allInventory.reduce((s,i)=>s+(i.balanceStockAmount||0),0);
-  const shortfallItems=allInventory.filter(i=>i.shortfall250>0).length;
-  const outOfStock=allInventory.filter(i=>(i.stockStatus||'').toLowerCase().includes('out')).length;
-  const lowStock=allInventory.filter(i=>(i.stockStatus||'').toLowerCase().includes('low')).length;
-
-  const statuses=[...new Set(allInventory.map(i=>i.stockStatus).filter(Boolean))];
-
-  area.innerHTML=`
-  <div class="stats-grid" style="margin-bottom:18px">
-    <div class="stat-card s-total"><div class="sc-label">Total Items</div><div class="sc-value">${allInventory.length}</div><div class="sc-sub">Unique Item Codes</div></div>
-    <div class="stat-card" style="border-top:3px solid #0060A0"><div class="sc-label">Inventory Value</div><div class="sc-value" style="font-size:24px;color:#0060A0">₹${totalVal.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="sc-sub">Balance Stock Amount</div></div>
-    <div class="stat-card s-crit"><div class="sc-label">Out of Stock</div><div class="sc-value">${outOfStock}</div><div class="sc-sub">Items at zero</div></div>
-    <div class="stat-card s-high"><div class="sc-label">Low Stock</div><div class="sc-value">${lowStock}</div><div class="sc-sub">Below reorder point</div></div>
-    <div class="stat-card" style="border-top:3px solid #8B0000"><div class="sc-label">Shortfall (250 sets)</div><div class="sc-value" style="color:#8B0000">${shortfallItems}</div><div class="sc-sub">Items with deficit</div></div>
-  </div>
-  <div class="toolbar" style="margin-bottom:14px">
-    <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search Item Code or Name…" oninput="handleInvSearch(this.value)" value="${invSearch}"></div>
-    <div class="tb-div"></div>
-    <select class="filter-sel" onchange="filterInvStatus(this.value)">
-      <option value="">All Statuses</option>
-      ${statuses.map(s=>`<option value="${e(s)}" ${invStatusFilter===s?'selected':''}>${e(s)}</option>`).join('')}
-    </select>
-    <div class="tb-div"></div>
-    <span class="active-count"><strong>${data.length}</strong> of <strong>${allInventory.length}</strong> items</span>
-  </div>
-  <div class="table-card">
-    <div class="tc-header">
-      <div class="tc-title">Store Inventory</div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <div class="tc-meta">${data.length} items</div>
-        <button class="btn-export" onclick="exportInventory()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Export
-        </button>
-      </div>
-    </div>
-    <div class="tbl-scroll">
-      <table style="min-width:2400px">
-        <thead><tr>
-          <th style="min-width:140px">Item Code</th>
-          <th style="min-width:200px">Item Name</th>
-          <th style="min-width:90px;text-align:right">Per Unit Qty</th>
-          <th style="min-width:110px;text-align:right">Opening Stock</th>
-          <th style="min-width:110px;text-align:right">Current Stock</th>
-          <th style="min-width:100px;text-align:right">Line Stock</th>
-          <th style="min-width:110px;text-align:right">Stock @ Antunes</th>
-          <th style="min-width:110px;text-align:right">Sent to Dubai</th>
-          <th style="min-width:120px;text-align:right">Receive Dubai</th>
-          <th style="min-width:130px;text-align:right">Bal Line 1F</th>
-          <th style="min-width:130px;text-align:right">1F & Store</th>
-          <th style="min-width:130px;text-align:right">Bal after 220 Sets</th>
-          <th style="min-width:100px">Lead Time</th>
-          <th style="min-width:110px;text-align:right">Reorder Pt</th>
-          <th style="min-width:120px">Stock Status</th>
-          <th style="min-width:120px;text-align:right">Shortfall 100</th>
-          <th style="min-width:120px;text-align:right">Shortfall 250</th>
-          <th style="min-width:120px;text-align:right">Shortfall 350</th>
-          <th style="min-width:110px;text-align:right">Cost/Pcs</th>
-          <th style="min-width:140px;text-align:right">Stock Value</th>
-          <th style="min-width:100px">ETA</th>
-          <th style="min-width:120px">Material Status</th>
-          <th style="min-width:180px">Remarks</th>
-        </tr></thead>
-        <tbody>
-          ${data.map(i=>{
-            const ss=i.stockStatus||'';
-            const ssColor=ss.toLowerCase().includes('out')?'var(--c-def)':ss.toLowerCase().includes('low')?'var(--c-high)':ss.toLowerCase().includes('ok')||ss.toLowerCase().includes('sufficient')?'var(--c-ok)':'var(--gray-5)';
-            const n=(v,dec=0)=>typeof v==='number'&&v!==0?v.toLocaleString('en-IN',{maximumFractionDigits:dec}):'—';
-            const sf=(v)=>v>0?`<span style="color:var(--c-def);font-weight:700;font-family:var(--font-mono)">${v}</span>`:'<span style="color:var(--c-ok)">—</span>';
-            return `<tr>
-              <td><span class="cell-pno">${e(i.itemCode)}</span></td>
-              <td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(i.itemName)}">${e(i.itemName)}</td>
-              <td class="cell-num">${n(i.perUnitQty)}</td>
-              <td class="cell-num">${n(i.openingStock)}</td>
-              <td class="cell-num" style="font-weight:700">${n(i.currentStock)}</td>
-              <td class="cell-num">${n(i.lineStock)}</td>
-              <td class="cell-num">${n(i.stockAntunes)}</td>
-              <td class="cell-num">${n(i.stockSentDubai)}</td>
-              <td class="cell-num">${n(i.stockReceiveDubai)}</td>
-              <td class="cell-num">${n(i.balanceLineStock1F)}</td>
-              <td class="cell-num">${n(i.stock1FAndStore)}</td>
-              <td class="cell-num" style="font-weight:600">${n(i.balanceAfter220Sets)}</td>
-              <td style="font-family:var(--font-mono);font-size:11.5px">${e(i.leadTime)||'—'}</td>
-              <td class="cell-num">${n(i.reorderPoint)}</td>
-              <td><span style="font-size:11.5px;font-weight:600;color:${ssColor}">${e(ss)||'—'}</span></td>
-              <td class="cell-num">${sf(i.shortfall100)}</td>
-              <td class="cell-num">${sf(i.shortfall250)}</td>
-              <td class="cell-num">${sf(i.shortfall350)}</td>
-              <td class="cell-num">₹${n(i.costPerPcs,2)}</td>
-              <td class="cell-num" style="font-weight:700">₹${n(i.balanceStockAmount,0)}</td>
-              <td style="font-family:var(--font-mono);font-size:11px">${e(i.eta)||'—'}</td>
-              <td style="font-size:11.5px">${e(i.materialStatus)||'—'}</td>
-              <td style="font-size:11.5px;color:var(--gray-5);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e(i.remarks||i.remark)}">${e(i.remarks||i.remark)||'—'}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  </div>`;
-}
-
-/* ═══════════════════════════════════════════════════════
-   PRODUCTION LINE TAB
-═══════════════════════════════════════════════════════ */
-let prodSearch='';
-function handleProdSearch(val){ prodSearch=val.trim().toLowerCase(); renderProductionTable(); }
-
-function renderProductionTable() {
-  const area=document.getElementById('prod-line-area'); if(!area)return;
-  if(!allProduction.length){
-    area.innerHTML=`<div class="empty-state"><div class="empty-icon">🏭</div><div class="empty-title">No Production Line Data</div><div class="empty-sub">Ask admin to upload the Production Line file</div></div>`;
-    return;
-  }
-  let data=allProduction;
-  if(prodSearch) data=data.filter(i=>(i.itemCode+' '+i.itemName).toLowerCase().includes(prodSearch));
-
-  const totalIssued=allProduction.reduce((s,i)=>s+(i.lineIssue||0),0);
-  const totalRejected=allProduction.reduce((s,i)=>s+(i.lineRejection||0),0);
-  const netConsumed=totalIssued-totalRejected;
-  const rejRate=totalIssued>0?((totalRejected/totalIssued)*100).toFixed(1):0;
-
-  area.innerHTML=`
-  <div class="stats-grid" style="margin-bottom:18px;grid-template-columns:repeat(4,1fr)">
-    <div class="stat-card s-total"><div class="sc-label">Total Items</div><div class="sc-value">${allProduction.length}</div><div class="sc-sub">On Production Line</div></div>
-    <div class="stat-card" style="border-top:3px solid var(--c-high)"><div class="sc-label">Total Issued</div><div class="sc-value" style="color:var(--c-high)">${totalIssued.toLocaleString('en-IN')}</div><div class="sc-sub">Line Issue qty</div></div>
-    <div class="stat-card" style="border-top:3px solid var(--c-ok)"><div class="sc-label">Net Consumed</div><div class="sc-value" style="color:var(--c-ok)">${netConsumed.toLocaleString('en-IN')}</div><div class="sc-sub">Issue − Rejection</div></div>
-    <div class="stat-card s-crit"><div class="sc-label">Rejection Rate</div><div class="sc-value">${rejRate}%</div><div class="sc-sub">${totalRejected.toLocaleString('en-IN')} units rejected</div></div>
-  </div>
-  <div class="toolbar" style="margin-bottom:14px">
-    <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search Item Code or Name…" oninput="handleProdSearch(this.value)" value="${prodSearch}"></div>
-    <div class="tb-div"></div>
-    <span class="active-count"><strong>${data.length}</strong> items</span>
-  </div>
-  <div class="table-card">
-    <div class="tc-header">
-      <div class="tc-title">Production Line</div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <div class="tc-meta">${data.length} items</div>
-        <button class="btn-export" onclick="exportProductionLine()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Export
-        </button>
-      </div>
-    </div>
-    <div class="tbl-scroll">
-      <table style="min-width:900px">
-        <thead><tr>
-          <th style="min-width:150px">Item Code</th>
-          <th style="min-width:220px">Item Name</th>
-          <th style="min-width:100px;text-align:right">Per Unit Qty</th>
-          <th style="min-width:140px">Location</th>
-          <th style="min-width:110px;text-align:right">Line Issue</th>
-          <th style="min-width:110px;text-align:right">Rejection</th>
-          <th style="min-width:130px;text-align:right">Net Consumed</th>
-          <th style="min-width:110px;text-align:right">Rejection %</th>
-        </tr></thead>
-        <tbody>
-          ${data.map(i=>{
-            const rejPct=i.lineIssue>0?((i.lineRejection/i.lineIssue)*100).toFixed(1):0;
-            const rejColor=rejPct>10?'var(--c-def)':rejPct>5?'var(--c-high)':'var(--c-ok)';
-            return `<tr>
-              <td><span class="cell-pno">${e(i.itemCode)}</span></td>
-              <td style="font-weight:600">${e(i.itemName)}</td>
-              <td class="cell-num">${i.perUnitQty||'—'}</td>
-              <td style="font-family:var(--font-mono);font-size:11.5px;color:var(--gray-5)">${e(i.stockLocation)||'—'}</td>
-              <td class="cell-num" style="color:var(--c-high);font-weight:600">${(i.lineIssue||0).toLocaleString('en-IN')}</td>
-              <td class="cell-num" style="color:var(--c-def)">${(i.lineRejection||0).toLocaleString('en-IN')}</td>
-              <td class="cell-num" style="font-weight:700">${(i.netConsumption||0).toLocaleString('en-IN')}</td>
-              <td class="cell-num"><span style="color:${rejColor};font-weight:700">${rejPct}%</span></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  </div>`;
-}
-
-/* ═══════════════════════════════════════════════════════
-   ANALYSIS TAB
-═══════════════════════════════════════════════════════ */
-function renderAnalysis() {
-  const area=document.getElementById('analysis-area'); if(!area)return;
-  if(!allParts.length&&!allInventory.length){
-    area.innerHTML=`<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No Data for Analysis</div><div class="empty-sub">Upload BOM and Inventory files first</div></div>`;
-    return;
-  }
-
-  /* Urgency breakdown */
-  const urgCounts={critical:0,high:0,medium:0,low:0};
-  allParts.forEach(p=>{ if(urgCounts[p.urgency]!==undefined) urgCounts[p.urgency]++; });
-
-  /* Top 10 critical lead-time parts */
-  const topCrit=[...allParts].sort((a,b)=>(b.leadTimeDays||0)-(a.leadTimeDays||0)).slice(0,10);
-
-  /* Stock status breakdown */
-  const ssCounts={};
-  allInventory.forEach(i=>{ const s=i.stockStatus||'Unknown'; ssCounts[s]=(ssCounts[s]||0)+1; });
-
-  /* Shortfall summary */
-  const shItems=allInventory.filter(i=>i.shortfall250>0).slice(0,10);
-
-  /* Inventory value by item (top 10) */
-  const topVal=[...allInventory].filter(i=>i.balanceStockAmount>0).sort((a,b)=>b.balanceStockAmount-a.balanceStockAmount).slice(0,10);
-
-  /* Total inventory value */
-  const totalInvVal=allInventory.reduce((s,i)=>s+(i.balanceStockAmount||0),0);
-
-  /* Production rejection leaders */
-  const topRej=[...allProduction].filter(i=>i.lineRejection>0).sort((a,b)=>b.lineRejection-a.lineRejection).slice(0,8);
-
-  const urgColors={critical:'#C80000',high:'#D46000',medium:'#B89000',low:'#2A7D2A'};
-  const urgBar=(key)=>{const pct=allParts.length?Math.round((urgCounts[key]/allParts.length)*100):0;return`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;font-weight:600;color:${urgColors[key]};text-transform:capitalize">${key}</span><span style="font-family:var(--font-mono);font-size:12px">${urgCounts[key]} (${pct}%)</span></div><div style="height:8px;background:var(--gray-2);overflow:hidden"><div style="height:100%;background:${urgColors[key]};width:${pct}%"></div></div></div>`;};
-
-  area.innerHTML=`
-  <!-- KPI Row -->
-  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:22px">
-    <div class="stat-card s-total"><div class="sc-label">BOM Parts</div><div class="sc-value">${allParts.length}</div><div class="sc-sub">Unique parts</div></div>
-    <div class="stat-card" style="border-top:3px solid #0060A0"><div class="sc-label">Inventory Value</div><div class="sc-value" style="font-size:22px;color:#0060A0">₹${(totalInvVal/100000).toFixed(1)}L</div><div class="sc-sub">₹${totalInvVal.toLocaleString('en-IN',{maximumFractionDigits:0})}</div></div>
-    <div class="stat-card s-crit"><div class="sc-label">Critical Parts</div><div class="sc-value">${urgCounts.critical}</div><div class="sc-sub">Lead time &gt;60 days</div></div>
-    <div class="stat-card" style="border-top:3px solid #8B0000"><div class="sc-label">Shortfall (250 sets)</div><div class="sc-value" style="color:#8B0000">${allInventory.filter(i=>i.shortfall250>0).length}</div><div class="sc-sub">Items in deficit</div></div>
-    <div class="stat-card s-high"><div class="sc-label">Rejection Rate</div><div class="sc-value">${allProduction.length?(((allProduction.reduce((s,i)=>s+(i.lineRejection||0),0)/Math.max(1,allProduction.reduce((s,i)=>s+(i.lineIssue||0),0)))*100).toFixed(1))+'%':'—'}</div><div class="sc-sub">Line rejection</div></div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
-
-    <!-- Urgency breakdown -->
-    <div class="table-card">
-      <div class="tc-header"><div class="tc-title">BOM Parts by Lead-Time Urgency</div></div>
-      <div style="padding:20px 24px">
-        ${['critical','high','medium','low'].map(urgBar).join('')}
-      </div>
-    </div>
-
-    <!-- Stock status breakdown -->
-    <div class="table-card">
-      <div class="tc-header"><div class="tc-title">Inventory Stock Status</div></div>
-      <div style="padding:20px 24px">
-        ${Object.entries(ssCounts).length?Object.entries(ssCounts).sort((a,b)=>b[1]-a[1]).map(([s,c])=>{const tot=allInventory.length; const pct=Math.round((c/tot)*100); const col=s.toLowerCase().includes('out')?'var(--c-def)':s.toLowerCase().includes('low')?'var(--c-high)':s.toLowerCase().includes('ok')||s.toLowerCase().includes('suf')?'var(--c-ok)':'var(--gray-4)'; return`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;font-weight:600;color:${col}">${e(s)}</span><span style="font-family:var(--font-mono);font-size:12px">${c} (${pct}%)</span></div><div style="height:8px;background:var(--gray-2);overflow:hidden"><div style="height:100%;background:${col};width:${pct}%"></div></div></div>`;}).join(''):`<div style="color:var(--gray-4);font-size:13px;padding:12px 0">No inventory data loaded</div>`}
-      </div>
-    </div>
-
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
-
-    <!-- Top 10 critical parts -->
-    <div class="table-card">
-      <div class="tc-header"><div class="tc-title">Top 10 Longest Lead Times</div></div>
-      <div style="overflow-x:auto">
-        <table style="min-width:0;width:100%">
-          <thead><tr>
-            <th style="min-width:140px">Part Number</th>
-            <th style="min-width:160px">Part Name</th>
-            <th style="min-width:100px;text-align:right">Lead Time</th>
-            <th style="min-width:100px">Urgency</th>
-          </tr></thead>
-          <tbody>
-            ${topCrit.map(p=>`<tr>
-              <td><span class="cell-pno">${e(p.partNumber)}</span></td>
-              <td style="font-size:12px;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(p.partName)}</td>
-              <td class="cell-num">${p.leadTimeDays} days</td>
-              <td>${_urgBadge(p.urgency)}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Top shortfall items -->
-    <div class="table-card">
-      <div class="tc-header"><div class="tc-title">Shortfall Items — 250 Sets</div></div>
-      ${shItems.length?`<div style="overflow-x:auto"><table style="min-width:0;width:100%">
-        <thead><tr>
-          <th style="min-width:140px">Item Code</th>
-          <th style="min-width:160px">Item Name</th>
-          <th style="min-width:110px;text-align:right">Shortfall</th>
-          <th style="min-width:100px">Status</th>
-        </tr></thead>
-        <tbody>
-          ${shItems.map(i=>{const ss=i.stockStatus||''; const col=ss.toLowerCase().includes('out')?'var(--c-def)':ss.toLowerCase().includes('low')?'var(--c-high)':'var(--gray-5)'; return`<tr>
-            <td><span class="cell-pno">${e(i.itemCode)}</span></td>
-            <td style="font-size:12px;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(i.itemName)}</td>
-            <td class="cell-num"><span style="color:var(--c-def);font-weight:700">${i.shortfall250}</span></td>
-            <td><span style="font-size:11px;font-weight:600;color:${col}">${e(ss)||'—'}</span></td>
-          </tr>`;}).join('')}
-        </tbody>
-      </table></div>`:`<div style="padding:24px 20px;color:var(--gray-4);font-size:13px">No shortfalls for 250 sets — inventory is sufficient</div>`}
-    </div>
-
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
-
-    <!-- Top inventory value items -->
-    <div class="table-card">
-      <div class="tc-header"><div class="tc-title">Top 10 by Stock Value</div></div>
-      ${topVal.length?`<div style="overflow-x:auto"><table style="min-width:0;width:100%">
-        <thead><tr>
-          <th style="min-width:140px">Item Code</th>
-          <th style="min-width:160px">Item Name</th>
-          <th style="min-width:130px;text-align:right">Stock Value</th>
-          <th style="min-width:100px;text-align:right">Current Stock</th>
-        </tr></thead>
-        <tbody>
-          ${topVal.map(i=>`<tr>
-            <td><span class="cell-pno">${e(i.itemCode)}</span></td>
-            <td style="font-size:12px;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(i.itemName)}</td>
-            <td class="cell-num" style="font-weight:700;color:#0060A0">₹${i.balanceStockAmount.toLocaleString('en-IN',{maximumFractionDigits:0})}</td>
-            <td class="cell-num">${i.currentStock}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>`:`<div style="padding:24px 20px;color:var(--gray-4);font-size:13px">No inventory data loaded</div>`}
-    </div>
-
-    <!-- Production rejection leaders -->
-    <div class="table-card">
-      <div class="tc-header"><div class="tc-title">Production — Rejection Leaders</div></div>
-      ${topRej.length?`<div style="overflow-x:auto"><table style="min-width:0;width:100%">
-        <thead><tr>
-          <th style="min-width:140px">Item Code</th>
-          <th style="min-width:160px">Item Name</th>
-          <th style="min-width:100px;text-align:right">Issued</th>
-          <th style="min-width:100px;text-align:right">Rejected</th>
-          <th style="min-width:90px;text-align:right">Rate</th>
-        </tr></thead>
-        <tbody>
-          ${topRej.map(i=>{const r=i.lineIssue>0?((i.lineRejection/i.lineIssue)*100).toFixed(1):0; const col=r>10?'var(--c-def)':r>5?'var(--c-high)':'var(--c-ok)'; return`<tr>
-            <td><span class="cell-pno">${e(i.itemCode)}</span></td>
-            <td style="font-size:12px;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(i.itemName)}</td>
-            <td class="cell-num">${(i.lineIssue||0).toLocaleString('en-IN')}</td>
-            <td class="cell-num" style="color:var(--c-def)">${(i.lineRejection||0).toLocaleString('en-IN')}</td>
-            <td class="cell-num"><span style="font-weight:700;color:${col}">${r}%</span></td>
-          </tr>`;}).join('')}
-        </tbody>
-      </table></div>`:`<div style="padding:24px 20px;color:var(--gray-4);font-size:13px">No production rejection data</div>`}
-    </div>
-
-  </div>`;
-}
-
-/* ═══ SHARED HELPERS ═════════════════════════════════ */
-function _urgBadge(u){const l={critical:'Critical',high:'High',medium:'Medium',low:'Low'};return`<span class="urg urg-${u}"><span class="urg-dot"></span>${l[u]||u}</span>`;}
-function _rwBadge(r){const v=String(r||'').trim();return(v==='Yes'||v==='YES'||v==='Y')?'<span class="tag tag-rw-yes">Required</span>':'<span class="tag tag-rw-no">—</span>';}
-function _s(id,v){const el=document.getElementById(id);if(el)el.textContent=v;}
-function e(str){return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
-
-/* ═══ CURRENCY / FX RATE ════════════════════════════ */
-
-// Map: country → typical vendor currency
-const _countryCurrency = {
-  'china': 'USD', 'usa': 'USD', 'united states': 'USD', 'us': 'USD',
-  'germany': 'EUR', 'france': 'EUR', 'italy': 'EUR', 'spain': 'EUR',
-  'uk': 'GBP', 'united kingdom': 'GBP', 'britain': 'GBP',
-  'japan': 'JPY', 'korea': 'KRW', 'south korea': 'KRW',
-  'taiwan': 'TWD', 'singapore': 'SGD',
-  'india': 'INR',
-};
-
-// Current FX override: { country, currency, rate }
-let _fxOverride = null;
-
-function showFxPanel() {
-  const country = document.getElementById('filter-country').value;
-  const panel   = document.getElementById('fx-panel');
-  if (!panel) return;
-
-  if (!country) {
-    panel.classList.remove('visible');
-    _fxOverride = null;
-    renderBomTable();
-    return;
-  }
-
-  // Detect currency: first from BOM parts data for that country, then from map
-  const partsForCountry = allParts.filter(p =>
-    (p.country || '').trim().toLowerCase() === country.trim().toLowerCase()
-  );
-  let currency = 'USD'; // default
-  if (partsForCountry.length) {
-    const c = partsForCountry.find(p => p.vendorCurrency && p.vendorCurrency !== 'INR');
-    if (c) currency = c.vendorCurrency;
-  } else {
-    currency = _countryCurrency[country.toLowerCase()] || 'USD';
-  }
-
-  document.getElementById('fx-country-label').textContent = country;
-  document.getElementById('fx-curr-label').textContent    = currency;
-  document.getElementById('fx-affected').textContent      =
-    `${partsForCountry.length} part${partsForCountry.length !== 1 ? 's' : ''} affected`;
-
-  // Restore previously set rate if country is the same
-  if (_fxOverride && _fxOverride.country === country) {
-    document.getElementById('fx-rate').value = _fxOverride.rate;
-  } else {
-    document.getElementById('fx-rate').value = '';
-    _fxOverride = null;
-  }
-
-  panel.classList.add('visible');
-  if (currency === 'INR') {
-    document.getElementById('fx-affected').textContent += ' (already in INR)';
-  }
-}
-
-function applyFxRate() {
-  const country  = document.getElementById('filter-country').value;
-  const rate     = parseFloat(document.getElementById('fx-rate').value);
-  const currency = document.getElementById('fx-curr-label').textContent;
-  if (!country || !rate || rate <= 0) { _fxOverride = null; renderBomTable(); return; }
-  _fxOverride = { country: country.trim().toLowerCase(), currency, rate };
-  renderBomTable();
-}
-
-function clearFxRate() {
-  document.getElementById('fx-rate').value = '';
-  _fxOverride = null;
-  renderBomTable();
-  const panel = document.getElementById('fx-panel');
-  if (panel) panel.classList.remove('visible');
-}
-
-// Returns converted cost — if this part's country matches FX override AND currency matches, apply rate
-function _fxCost(p, fieldName) {
-  const val = p[fieldName] || 0;
-  if (!_fxOverride || !val) return val;
-  const pCountry = (p.country || '').trim().toLowerCase();
-  if (pCountry !== _fxOverride.country) return val;
-  if (p.vendorCurrency === 'INR' || p.vendorCurrency === '') return val;
-  if (p.vendorCurrency !== _fxOverride.currency) return val;
-  // vendorUnitRate is in foreign currency — convert. Other ₹ fields scale proportionally.
-  if (fieldName === 'vendorUnitRate') return val; // show original rate, calc total separately
-  return val; // cost fields in BOM are usually already in INR; if yours are in foreign currency, adjust here
-}
-
-// Get display vendor rate with FX applied
-function _fxVendorRate(p) {
-  if (!p.vendorUnitRate) return null;
-  if (_fxOverride) {
-    const pCountry = (p.country || '').trim().toLowerCase();
-    if (pCountry === _fxOverride.country && p.vendorCurrency !== 'INR') {
-      return { rate: p.vendorUnitRate * _fxOverride.rate, currency: 'INR', converted: true };
+      expRow = '<tr id="bom-exp-'+pnSafe+'" style="display:' + (isExp?'':'none') + '">'
+        + '<td colspan="'+COL+'" style="padding:0;border-bottom:2px solid #AAAACC">'
+        + '<div style="background:#22223A">'
+        + '<div style="padding:5px 12px 5px 32px;font-family:var(--FH);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#8888BB">'
+        + 'Sub-Assembly Breakdown — ' + _e(p.partNumber) + '</div>'
+        + '<table style="width:100%;border-collapse:collapse">'
+        + '<thead><tr style="background:#2A2A4A">'
+        + '<th style="padding:6px 12px 6px 32px;color:#7070A0;font-family:var(--FH);font-size:10px;letter-spacing:.8px;text-transform:uppercase;text-align:left;white-space:nowrap">Sub-Assembly</th>'
+        + '<th style="padding:6px 14px;color:#7070A0;font-family:var(--FH);font-size:10px;letter-spacing:.8px;text-transform:uppercase;text-align:right;white-space:nowrap">Qty in SA</th>'
+        + '<th style="padding:6px 14px;color:#7070A0;font-family:var(--FH);font-size:10px;letter-spacing:.8px;text-transform:uppercase;text-align:left;white-space:nowrap">Finalized</th>'
+        + '<th style="padding:6px 14px;color:#7070A0;font-family:var(--FH);font-size:10px;letter-spacing:.8px;text-transform:uppercase;text-align:left;white-space:nowrap">S.No.</th>'
+        + '</tr></thead><tbody>'
+        + saRowsHtml
+        + '<tr style="background:#22223A">'
+        + '<td style="padding:6px 12px 6px 32px;font-family:var(--FH);font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.5px">'
+        + saList.length + ' sub-assemblies</td>'
+        + '<td style="padding:6px 14px;text-align:right;font-family:var(--FM);font-size:12px;font-weight:700;color:white">' + _fmtN(sumSA,2)
+        + ' <span style="font-size:9px;color:#555;font-weight:400">/ ' + _fmtN(p.quantity||0,2) + ' total</span></td>'
+        + '<td colspan="2"></td></tr>'
+        + '</tbody></table></div>'
+        + '</td></tr>';
     }
-  }
-  return { rate: p.vendorUnitRate, currency: p.vendorCurrency, converted: false };
-}
 
-// Is this part affected by current FX override?
-function _isFxPart(p) {
-  if (!_fxOverride) return false;
-  return (p.country || '').trim().toLowerCase() === _fxOverride.country && p.vendorCurrency !== 'INR';
+    return mainRow + expRow;
+  }).join('');
 }
-
-/* ═══ EXPORTS ════════════════════════════════════════ */
 
 function exportBOM() {
-  if (!filtered.length) { showToast('No BOM data to export', 'info'); return; }
-
-  const fxNote = _fxOverride
-    ? ` [FX: 1 ${_fxOverride.currency}=${_fxOverride.rate} INR for ${_fxOverride.country}]`
-    : '';
-
-  const data = filtered.map(p => {
-    const fx = _fxVendorRate(p);
-    const inrRate = fx ? (fx.converted ? fx.rate : (p.vendorCurrency === 'INR' ? p.vendorUnitRate : p.vendorUnitRate)) : 0;
-    const calcUnitCost = (fx && fx.converted) ? (p.qty * inrRate) : p.totalUnitCost;
-
+  if (!bomFiltered.length) { showToast('No BOM data to export','info'); return; }
+  var data = bomFiltered.map(function(p) {
     return {
-      'Part Number':       p.partNumber,
-      'Part Name':         p.partName,
-      'Description':       p.partDesc,
-      'HSN Code':          p.hsnCode,
-      'Part Type':         p.partType,
-      'Rework Required':   p.reworkRequired,
-      'Material':          p.material,
-      'Quantity':          p.qty,
-      'UOM':               p.uom,
-      'Vendor Currency':   p.vendorCurrency,
-      [`Vendor Rate (${fx?.converted ? 'INR conv.' : p.vendorCurrency})`]: fx ? fx.rate.toFixed(2) : '',
-      'O2C Unit Cost (₹)': fx?.converted ? calcUnitCost.toFixed(2) : p.totalUnitCost,
-      'Custom Duty (₹)':   p.customDuty,
-      'Surcharge %':       p.surchargePercent,
-      'Duty %':            p.dutyPercent,
-      'Total Freight (₹)': p.totalFreight,
-      'Landed Cost/Unit (₹)': p.landedCost,
-      'Supplier':          p.supplierName,
-      'Country':           p.country,
-      'Lead Time (days)':  p.leadTimeDays,
-      'Urgency':           p.urgency,
-      'Sub-Assemblies':    (p.subAssemblies || []).map(s => `${s.id}(${s.qty})`).join(', '),
-      'Individual Qty':    p.individualQty,
+      'Part Number': p.partNumber, 'Part Name': p.partName, 'Part Description': p.partDesc,
+      'HSN Code': p.hsnCode, 'Part Type': p.partType, 'Rework Required': p.reworkRequired,
+      'Material': p.material, 'Vendor Currency': p.vendorCurrency, 'Unit Rate (Vendor)': p.unitRateVendor,
+      'Total Qty': p.quantity, 'UOM': p.uom,
+      'Total Unit Cost (O2C)': p.totalUnitCost, 'Custom Duty': p.customDuty,
+      'Surcharge %': p.surchargePercent, 'Duty %': p.dutyPercent,
+      'Total Freight': p.totalFreight, 'Total Unit Landed Cost': p.totalUnitLandedCost,
+      'Supplier Name': p.supplierName, 'Country': p.country,
+      'Lead Time': p.leadTime, 'Urgency': p.urgency,
+      'Sub-Assemblies': (p.subAssemblyId||''),
+      'SA Breakdown': (p.saBreakdown||[]).map(function(s){return s.id+':'+s.qty;}).join(' | '),
     };
   });
-
-  const ws = XLSX.utils.json_to_sheet(data);
-  // Auto column widths
-  const cols = Object.keys(data[0] || {});
-  ws['!cols'] = cols.map(k => ({ wch: Math.min(40, Math.max(k.length + 2, 12)) }));
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'BOM Parts');
-  XLSX.writeFile(wb, `On2Cook_BOM${fxNote.replace(/[\[\]:*?/\\]/g,'_')}.xlsx`);
-  showToast(`✓ Exported ${filtered.length} BOM parts`, 'success');
+  var ws = XLSX.utils.json_to_sheet(data);
+  var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Device BOM');
+  XLSX.writeFile(wb, 'On2Cook_Device_BOM.xlsx');
+  showToast('✓ Exported ' + bomFiltered.length + ' BOM rows', 'success');
 }
 
-function exportInventory() {
-  const src = (() => {
-    let d = allInventory;
-    if (invSearch)       d = d.filter(i => (i.itemCode+' '+i.itemName).toLowerCase().includes(invSearch));
-    if (invStatusFilter) d = d.filter(i => i.stockStatus === invStatusFilter);
-    return d;
-  })();
-  if (!src.length) { showToast('No inventory data to export', 'info'); return; }
+/* ══════════════════════════════════════════════════
+   STORE INVENTORY TAB
+   Values in original currency by default.
+   Convert toggle → persists through export too.
+══════════════════════════════════════════════════ */
+function handleStoreSearch(v) { storeSearch = v.trim().toLowerCase(); _renderStore(); }
 
-  const data = src.map(i => ({
-    'Item Code':                i.itemCode,
-    'Item Name':                i.itemName,
-    'Per Unit Qty':             i.perUnitQty,
-    'Opening Stock':            i.openingStock,
-    'Current Stock':            i.currentStock,
-    'Line Stock':               i.lineStock,
-    'Set Produce - Old Part':   i.setProdOldPart,
-    'Set Produce - New Part':   i.setProdNewPart,
-    'New Parts':                i.newParts,
-    'Stock at Antunes':         i.stockAntunes,
-    'Stock Sent to Dubai':      i.stockSentDubai,
-    'Stock to Receive - Dubai': i.stockReceiveDubai,
-    'Bal Line Stock 1F':        i.balanceLineStock1F,
-    'Stock 1F & Store':         i.stock1FAndStore,
-    'Bal after 220 Sets':       i.balanceAfter220Sets,
-    'Lead Time':                i.leadTime,
-    'Reorder Point':            i.reorderPoint,
-    'Stock Status':             i.stockStatus,
-    'Bal after 220 Qty':        i.balanceAfter220Qty,
-    'Remark':                   i.remark,
-    'ETA':                      i.eta,
-    'Material Status':          i.materialStatus,
-    'Material Comments':        i.materialComments,
-    'Shortfall - 100 Sets':     i.shortfall100,
-    'Shortfall - 250 Sets':     i.shortfall250,
-    'Shortfall - 350 Sets':     i.shortfall350,
-    'Cost per Pcs (₹)':        i.costPerPcs,
-    'Balance Stock Amount (₹)': i.balanceStockAmount,
-    'Remarks':                  i.remarks,
-  }));
-
-  const ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = Object.keys(data[0] || {}).map(k => ({ wch: Math.min(36, Math.max(k.length + 2, 12)) }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Store Inventory');
-  XLSX.writeFile(wb, 'On2Cook_Store_Inventory.xlsx');
-  showToast(`✓ Exported ${src.length} inventory items`, 'success');
+function toggleStoreConvert(curr) {
+  storeConvertCol[curr] = !storeConvertCol[curr];
+  _renderStore();
+}
+function updateStoreFxRate(curr, v) {
+  fxRates[curr] = parseFloat(v) || fxRates[curr];
+  _renderStore();
 }
 
-function exportProductionLine() {
-  const src = (() => {
-    let d = allProduction;
-    if (prodSearch) d = d.filter(i => (i.itemCode+' '+i.itemName).toLowerCase().includes(prodSearch));
-    return d;
-  })();
-  if (!src.length) { showToast('No production data to export', 'info'); return; }
+/* Resolve display value for a cell (apply conversion if toggled) */
+function _storeVal(rawVal, h, currency) {
+  var colNorm  = _norm(h);
+  var isNum    = rawVal !== '' && rawVal !== null && rawVal !== undefined && !isNaN(parseFloat(rawVal)) && isFinite(rawVal);
+  var isMoney  = isNum && (colNorm.includes('rate') || colNorm.includes('cost') || colNorm.includes('value') || colNorm.includes('amount') || colNorm.includes('price') || colNorm.includes('unitrate'));
+  var isConv   = (currency !== 'INR') && !!storeConvertCol[currency];
+  var rate     = fxRates[currency] || 1;
+  if (isMoney && isConv) return { val: parseFloat(rawVal) * rate, converted: true, orig: parseFloat(rawVal), curr: currency };
+  return { val: rawVal, converted: false };
+}
 
-  const data = src.map(i => ({
-    'Item Code':       i.itemCode,
-    'Item Name':       i.itemName,
-    'Per Unit Qty':    i.perUnitQty,
-    'Location':        i.stockLocation,
-    'Line Issue':      i.lineIssue,
-    'Line Rejection':  i.lineRejection,
-    'Net Consumed':    i.netConsumption,
-    'Rejection %':     i.lineIssue > 0 ? ((i.lineRejection / i.lineIssue) * 100).toFixed(1) + '%' : '0%',
-  }));
+function _renderStore() {
+  var area = document.getElementById('store-area');
+  if (!area) return;
 
-  const totalIssued    = src.reduce((s, i) => s + (i.lineIssue     || 0), 0);
-  const totalRejected  = src.reduce((s, i) => s + (i.lineRejection || 0), 0);
+  if (!allStore.length) {
+    area.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div>'
+      + '<div class="empty-title">No Store Inventory Data</div>'
+      + '<div class="empty-sub">Ask admin to upload the Store Inventory file</div></div>';
+    return;
+  }
 
-  const ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = Object.keys(data[0] || {}).map(k => ({ wch: Math.min(32, Math.max(k.length + 2, 12)) }));
+  var filtered = allStore.filter(function(i) {
+    if (!storeSearch) return true;
+    return (i.partNumber + ' ' + (i._partName||'')).toLowerCase().includes(storeSearch);
+  });
 
-  // Add summary row at bottom
-  XLSX.utils.sheet_add_aoa(ws, [
-    [],
-    ['TOTAL', '', '', '', totalIssued, totalRejected, totalIssued - totalRejected,
-     totalIssued > 0 ? ((totalRejected / totalIssued) * 100).toFixed(1) + '%' : '0%'],
-  ], { origin: -1 });
+  var rawHeaders = (allStore[0]._rawHeaders && allStore[0]._rawHeaders.length)
+    ? allStore[0]._rawHeaders : Object.keys(allStore[0]._rawRow || {});
+  if (!rawHeaders.length)
+    rawHeaders = ['Part Number','Part Name','Unit Rate','Currency','Country','Quantity','Unit','Store Inventory','Production Line','Inventory 128'];
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Production Line');
-  XLSX.writeFile(wb, 'On2Cook_Production_Line.xlsx');
-  showToast(`✓ Exported ${src.length} production items`, 'success');
+  var currencies = [];
+  allStore.forEach(function(i){ var c=i._currency; if(c&&c!=='INR'&&currencies.indexOf(c)===-1) currencies.push(c); });
+
+  /* ── Currency panel ── */
+  var fxPanel = '';
+  if (currencies.length) {
+    fxPanel = '<div style="background:white;border:1px solid #E6C84A;padding:16px 20px;margin-bottom:16px;box-shadow:var(--sh-sm)">'
+      + '<div style="font-family:var(--FH);font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#7A5A00;margin-bottom:6px">💱 Currency Conversion</div>'
+      + '<div style="font-size:11.5px;color:#888;margin-bottom:12px">Toggle converts display <strong>and</strong> export values. Rate is editable.</div>'
+      + '<div style="display:flex;gap:12px;flex-wrap:wrap">'
+      + currencies.map(function(curr) {
+          var isOn = !!storeConvertCol[curr];
+          var count = allStore.filter(function(i){return i._currency===curr;}).length;
+          return '<div style="background:' + (isOn?'#FFFBEA':'#F5F5F5') + ';border:1.5px solid ' + (isOn?'#E6C84A':'#DDD') + ';padding:12px 16px;min-width:190px">'
+            + '<div style="font-family:var(--FH);font-size:12px;font-weight:700;color:#555;margin-bottom:8px">'
+            + _e(curr) + ' <span style="font-weight:400;color:#AAA;font-size:10px">(' + count + ' items)</span></div>'
+            + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">'
+            + '<span style="font-size:11px;color:#888">1 ' + _e(curr) + ' =</span>'
+            + '<input type="number" value="' + (fxRates[curr]||'') + '" min="0" step="0.01" '
+            + 'oninput="updateStoreFxRate(\'' + _e(curr) + '\',this.value)" '
+            + 'style="width:70px;padding:5px 8px;border:1.5px solid #DDD;font-family:var(--FM);font-size:12px;font-weight:700;outline:none;background:white">'
+            + '<span style="font-size:11px;font-weight:600;color:#888">INR</span></div>'
+            + '<button onclick="toggleStoreConvert(\'' + _e(curr) + '\')" '
+            + 'style="width:100%;padding:6px;background:' + (isOn?'var(--red)':'var(--black-3)') + ';color:white;border:none;font-family:var(--FH);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;cursor:pointer">'
+            + (isOn ? '✓ ON — also in export' : 'Convert → INR') + '</button>'
+            + '</div>';
+        }).join('')
+      + '</div></div>';
+  }
+
+  /* ── Stats ── */
+  var statsRow = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px">'
+    + _sCard('s-total','Total Items',allStore.length,'Unique parts')
+    + _sCard('s-vendor','Currencies',currencies.length||'INR only','In dataset')
+    + _sCard('s-sub','Filtered',filtered.length,'After search')
+    + _sCard('s-high','Columns',rawHeaders.length,'From upload')
+    + '</div>';
+
+  /* ── Toolbar ── */
+  var toolbar = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;background:white;border:1px solid var(--gray-2);padding:10px 14px;box-shadow:var(--sh-sm)">'
+    + '<div style="position:relative;flex:1;min-width:200px;max-width:280px">'
+    + '<svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:13px;height:13px;color:#999" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+    + '<input type="text" placeholder="Search part number or name…" oninput="handleStoreSearch(this.value)" value="' + _e(storeSearch) + '" '
+    + 'style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid var(--gray-2);font-size:12.5px;background:var(--gray-1);outline:none"></div>'
+    + '<span style="font-family:var(--FM);font-size:11px;color:#666;margin-left:auto"><strong>' + filtered.length + '</strong> / <strong>' + allStore.length + '</strong></span>'
+    + '<button onclick="exportStore()" style="display:inline-flex;align-items:center;gap:5px;padding:7px 14px;background:white;color:var(--black-3);border:1.5px solid var(--gray-3);font-family:var(--FH);font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;cursor:pointer" onmouseover="this.style.background=\'#111\';this.style.color=\'white\'" onmouseout="this.style.background=\'white\';this.style.color=\'var(--black-3)\'">'
+    + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button>'
+    + '</div>';
+
+  /* ── Table ── */
+  var thBase = 'background:var(--black-3);color:white;padding:10px;font-family:var(--FH);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;white-space:nowrap;border-right:1px solid #3D3D3D;position:sticky;top:0;z-index:20;text-align:left';
+  var thead  = rawHeaders.map(function(h){ return '<th style="'+thBase+';min-width:110px">'+_e(h)+'</th>'; }).join('');
+
+  var tbody = filtered.map(function(item) {
+    var rawRow = item._rawRow || {};
+    var curr   = item._currency || 'INR';
+    var isConv = (curr !== 'INR') && !!storeConvertCol[curr];
+
+    var cells = rawHeaders.map(function(h) {
+      // Get raw value
+      var val = rawRow[h];
+      if (val === undefined || val === null || val === '') {
+        var nh = _norm(h);
+        if      (nh==='partnumber'||nh==='partno') val = item.partNumber;
+        else if (nh==='partname'||nh==='name')     val = item._partName;
+        else if (nh==='unitrate'||nh==='rate')     val = item._unitRate;
+        else if (nh==='currency'||nh==='curr')     val = item._currency;
+        else if (nh==='country')                   val = item._country;
+        else if (nh==='quantity'||nh==='qty')      val = item._quantity;
+        else if (nh==='unit'||nh==='uom')          val = item._unit;
+        else if (nh.includes('storeinv')||nh.includes('currentstock')) val = item._storeInvQty;
+        else if (nh.includes('prodline')||nh.includes('productionline')) val = item._prodLineQty;
+        else if (nh.includes('128'))               val = item._inventory128;
+      }
+
+      var colNorm  = _norm(h);
+      var sv       = String(val !== undefined && val !== null ? val : '');
+      var isNum    = sv !== '' && !isNaN(parseFloat(sv)) && isFinite(sv);
+      var isMoney  = isNum && (colNorm.includes('rate')||colNorm.includes('cost')||colNorm.includes('value')||colNorm.includes('amount')||colNorm.includes('price'));
+      var isCurrCol= colNorm==='currency'||colNorm==='vendorcurrency'||colNorm==='curr';
+
+      var display;
+      if (isCurrCol) {
+        var cv = sv.trim();
+        var cc = cv==='USD'?'#1A5276':cv==='CNY'||cv==='RMB'?'#922B21':cv==='EUR'?'#1F618D':cv==='GBP'?'#145A32':'#555';
+        display = '<span style="font-family:var(--FM);font-size:11px;font-weight:700;color:'+cc+'">'+_e(cv||'—')+'</span>'
+          + (isConv ? '<span style="font-size:9px;color:var(--red);margin-left:3px">→INR</span>' : '');
+      } else if (isMoney && isConv) {
+        var orig = parseFloat(sv);
+        var rate = fxRates[curr] || 1;
+        display = '<span style="font-family:var(--FM);font-size:11.5px;color:#0060A0;font-weight:700">₹'+_fmtN(orig*rate,2)+'</span>'
+          + '<div style="font-size:9px;color:#AAA;line-height:1.2">'+_e(curr)+' '+_fmtN(orig,2)+'</div>';
+      } else if (isNum) {
+        display = '<span style="font-family:var(--FM);font-size:11.5px">'+_fmtN(parseFloat(sv),2)+'</span>';
+      } else if (!sv.trim()) {
+        display = '<span style="color:#DDD">—</span>';
+      } else if (colNorm==='partnumber'||colNorm==='partno') {
+        display = '<span style="font-family:var(--FM);font-size:11.5px;color:#D10000;font-weight:500">'+_e(sv)+'</span>';
+      } else if (sv.length > 55) {
+        display = '<span title="'+_e(sv)+'" style="font-size:11px;color:#444;display:block;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_e(sv)+'</span>';
+      } else {
+        display = '<span style="font-size:11.5px">'+_e(sv)+'</span>';
+      }
+      return '<td style="padding:7px 10px;border-right:1px solid #EEE;vertical-align:middle;white-space:nowrap">'+display+'</td>';
+    }).join('');
+
+    return '<tr onmouseover="this.style.background=\'#F8FBFF\'" onmouseout="this.style.background=\'\'">' + cells + '</tr>';
+  }).join('');
+
+  area.innerHTML = statsRow + fxPanel + toolbar
+    + '<div class="table-card">'
+    + '<div class="tc-header"><div class="tc-title">Store Inventory</div>'
+    + '<div class="tc-meta">' + filtered.length + ' items · ' + rawHeaders.length + ' columns'
+    + (Object.keys(storeConvertCol).some(function(k){return storeConvertCol[k];}) ? ' · <span style="color:#E6C84A">conversion active</span>' : '')
+    + '</div></div>'
+    + '<div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 380px);min-height:420px">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+    + '<thead><tr>' + thead + '</tr></thead><tbody>' + tbody + '</tbody>'
+    + '</table></div></div>';
+}
+
+function exportStore() {
+  if (!allStore.length) { showToast('No store data to export','info'); return; }
+  var rawHeaders = (allStore[0]._rawHeaders && allStore[0]._rawHeaders.length)
+    ? allStore[0]._rawHeaders : Object.keys(allStore[0]._rawRow || {});
+
+  var data = allStore.map(function(item) {
+    var rawRow = item._rawRow || {};
+    var curr   = item._currency || 'INR';
+    var isConv = (curr !== 'INR') && !!storeConvertCol[curr];
+    var rate   = fxRates[curr] || 1;
+    var row    = {};
+
+    rawHeaders.forEach(function(h) {
+      var val = rawRow[h];
+      if (val === undefined || val === null) {
+        var nh = _norm(h);
+        if      (nh==='partnumber') val = item.partNumber;
+        else if (nh==='partname')   val = item._partName;
+        else if (nh==='unitrate')   val = item._unitRate;
+        else if (nh==='currency')   val = item._currency;
+        else if (nh==='country')    val = item._country;
+      }
+
+      // Apply conversion if toggled
+      var colNorm = _norm(h);
+      var sv      = String(val !== undefined && val !== null ? val : '');
+      var isNum   = sv !== '' && !isNaN(parseFloat(sv)) && isFinite(sv);
+      var isMoney = isNum && (colNorm.includes('rate')||colNorm.includes('cost')||colNorm.includes('value')||colNorm.includes('amount')||colNorm.includes('price'));
+      if (isMoney && isConv) {
+        row[h + ' (INR)'] = parseFloat(sv) * rate;
+        row[h + ' (' + curr + ')'] = parseFloat(sv);
+      } else {
+        row[h] = (val !== undefined && val !== null) ? val : '';
+      }
+    });
+
+    // Add conversion note column if converted
+    if (isConv) row['_conversion'] = '1 ' + curr + ' = ' + rate + ' INR';
+    return row;
+  });
+
+  var ws  = XLSX.utils.json_to_sheet(data);
+  var wb2 = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb2, ws, 'Store Inventory');
+  XLSX.writeFile(wb2, 'On2Cook_Store_Inventory.xlsx');
+  showToast('✓ Exported' + (Object.keys(storeConvertCol).some(function(k){return storeConvertCol[k];}) ? ' with conversions' : ''), 'success');
+}
+
+/* ── Shared helpers ───────────────────────────── */
+function _sCard(cls,lbl,val,sub,vc) {
+  var vs=String(val);
+  return '<div class="stat-card '+cls+'"><div class="sc-label">'+lbl+'</div>'
+    +'<div class="sc-value" style="font-size:'+(vs.length>7?'20px':vs.length>4?'28px':'40px')+(vc?';color:'+vc:'')+'">'+(vs||'—')+'</div>'
+    +'<div class="sc-sub">'+sub+'</div></div>';
+}
+function _td(v,s,mw) {
+  var st='padding:8px 10px;border-right:1px solid #EEE;vertical-align:middle;white-space:nowrap';
+  if(s)  st+=';'+s;
+  if(mw) st+=';max-width:'+mw+'px;overflow:hidden;text-overflow:ellipsis';
+  return '<td style="'+st+'">'+v+'</td>';
+}
+function _tdr(v,s) {
+  var st='padding:8px 10px;border-right:1px solid #EEE;text-align:right;font-family:var(--FM);font-size:12px;white-space:nowrap;vertical-align:middle';
+  if(s) st+=';'+s;
+  return '<td style="'+st+'">'+v+'</td>';
+}
+function _t(id,v)    { var e=document.getElementById(id); if(e) e.textContent=v; }
+function _e(s)       { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
+function _norm(s)    { return String(s||'').trim().toLowerCase().replace(/[\s_\-\(\)\/\|&\.#%]+/g,''); }
+function _fmtN(n,d)  { return Number(n).toLocaleString('en-IN',{maximumFractionDigits:d||0}); }
+function _eid(s)     { return String(s||'').replace(/[^a-zA-Z0-9_-]/g,'_'); }
+function _ea(s)      { return String(s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+function _fillSel(id,vals,ph) {
+  var e=document.getElementById(id); if(!e) return;
+  e.innerHTML='<option value="">'+ph+'</option>';
+  vals.forEach(function(v){ var o=document.createElement('option'); o.value=v; o.textContent=v; e.appendChild(o); });
 }
