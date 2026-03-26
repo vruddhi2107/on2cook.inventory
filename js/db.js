@@ -1,5 +1,4 @@
 
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 function _H() {
   return { 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY };
 }
@@ -35,8 +34,8 @@ function _dbToBom(r) {
   return {
     id:                  r.id || '',
     sno:                 dec.realSno,
-    tab1Qty:             dec.tab1Qty,   // total qty from Tab 1
-    saBreakdown:         dec.saMap,     // [{id,qty,sno,finalized}, ...]
+    tab1Qty:             dec.tab1Qty, 
+    saBreakdown:         dec.saMap,     
     finalized:           r.finalized || '',
     partNumber:          r.part_number || '',
     partName:            r.part_name || '',

@@ -17,7 +17,6 @@
  * Required DB change:
  *   ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS tab_permissions TEXT DEFAULT '[]';
  */
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
 var Auth = (function () {
 

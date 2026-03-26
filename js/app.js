@@ -2,7 +2,6 @@
  * app.js — On2Cook BOM Portal · Role-aware rendering
  * Roles: viewer (read-only) | editor (edit data) | admin (full)
  */
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
 var allBom       = [];
 var allStore     = [];

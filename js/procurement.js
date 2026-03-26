@@ -10,7 +10,6 @@
  * Notes: persisted via bom_metadata key 'vendor_notes_v1' as JSON blob.
  * Filters: category dropdown + country dropdown, both derived from live data.
  */
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
 var Proc = (function () {
 
