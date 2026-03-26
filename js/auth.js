@@ -17,7 +17,6 @@
  * Required DB change:
  *   ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS tab_permissions TEXT DEFAULT '[]';
  */
-
 var Auth = (function () {
 
   var SESSION_KEY = 'o2c_session';
