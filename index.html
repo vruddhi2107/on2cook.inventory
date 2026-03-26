@@ -5,294 +5,677 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>On2Cook — BOM Portal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,300;0,400;0,600;0,700;0,800;0,900;1,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{
-  --red:#D10000;--red-dark:#9B0000;--red-faint:#FFF3F3;
-  --black:#111;--black-2:#1E1E1E;--black-3:#2D2D2D;
-  --gray-1:#F4F4F4;--gray-2:#E6E6E6;--gray-3:#CCC;--gray-4:#999;--gray-5:#666;
-  --c-ok:#1A7A1A;--c-ok-bg:#EAFBEA;--c-ok-br:#A0E0A0;
-  --c-def:#C80000;--c-def-bg:#FFEAEA;--c-def-br:#FFBBBB;
-  --c-exc:#0060A0;--c-exc-bg:#EAF3FF;--c-exc-br:#AACCFF;
-  --c-crit:#C80000;--c-high:#D46000;--c-med:#B89000;--c-low:#2A7D2A;
+/* ═══════════════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════════════ */
+:root {
+  --red:#D10000; --red-dark:#9B0000; --red-faint:#FFF5F5;
+  --black:#000; --black-2:#1A1A1A; --black-3:#2D2D2D; --black-4:#3D3D3D;
+  --white:#FFFFFF; --off-white:#F7F7F7; --cream:#F2F0EC;
+  --g1:#F5F5F5; --g2:#E8E8E8; --g3:#CCCCCC; --g4:#999; --g5:#666;
+  --ok:#1A7A1A; --ok-bg:#EAFBEA;
   --FH:'Barlow Condensed',sans-serif;
   --FM:'IBM Plex Mono',monospace;
   --FB:'IBM Plex Sans',sans-serif;
-  --sh-sm:0 1px 4px rgba(0,0,0,.08);--sh-md:0 4px 16px rgba(0,0,0,.13);
+  --sh-sm:0 1px 4px rgba(0,0,0,.07);
+  --sh-md:0 4px 20px rgba(0,0,0,.12);
+  --sh-lg:0 16px 56px rgba(0,0,0,.22);
+  --radius:0px; /* sharp corners — industrial brand */
 }
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--FB);background:var(--gray-1);color:var(--black);min-height:100vh}
-button{cursor:pointer;font-family:inherit;border:none}
-select,input{font-family:inherit}
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0 }
+html { scroll-behavior:smooth }
+body { font-family:var(--FB); background:var(--off-white); color:var(--black); min-height:100vh; overflow-x:hidden }
 
-/* HEADER */
-.hdr{background:var(--black);height:62px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:3px solid var(--red);position:sticky;top:0;z-index:200;box-shadow:var(--sh-md)}
-.logo-block{width:38px;height:38px;background:var(--red);display:flex;align-items:center;justify-content:center;font-family:var(--FH);font-size:17px;font-weight:800;color:white;letter-spacing:-1px;cursor:pointer;user-select:none;transition:transform .12s,box-shadow .2s;flex-shrink:0}
-.logo-block:active{transform:scale(.88)}.logo-block.tap-flash{box-shadow:0 0 0 5px rgba(209,0,0,.45)}
-.brand-name{font-family:var(--FH);font-size:23px;font-weight:800;letter-spacing:1.5px;line-height:1;color:white}
-.brand-name em{color:var(--red);font-style:normal}
-.brand-sub{font-size:9.5px;letter-spacing:2.5px;text-transform:uppercase;color:var(--gray-4);margin-top:3px}
-.db-pill{display:flex;align-items:center;gap:6px;padding:5px 13px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);font-family:var(--FM);font-size:10.5px;color:var(--gray-4)}
-.db-dot{width:6px;height:6px;border-radius:50%;background:var(--gray-4);transition:background .3s}
-.db-dot.green{background:#4CAF50;box-shadow:0 0 5px #4CAF5070}.db-dot.yellow{background:#FFC107}
+/* ── Auth-mode: lock body scroll, guarantee app is hidden ── */
+body.auth-mode { overflow:hidden; height:100vh }
+body.auth-mode #app-screen { display:none !important; visibility:hidden !important; pointer-events:none !important }
+#auth-screen { display:none }   /* JS shows it after adding auth-mode class */
+a { color:var(--red); text-decoration:none }
+a:hover { text-decoration:underline }
+button { cursor:pointer; font-family:inherit; border:none; background:none }
+select, input { font-family:inherit }
+::-webkit-scrollbar { width:5px; height:5px }
+::-webkit-scrollbar-track { background:var(--g1) }
+::-webkit-scrollbar-thumb { background:var(--g3) }
+::-webkit-scrollbar-thumb:hover { background:var(--g4) }
 
-/* TABS */
-.tab-bar{background:var(--black-2);display:flex;align-items:flex-end;padding:0 28px;border-bottom:2px solid var(--red);gap:2px}
-.tab-btn{padding:13px 34px 14px;font-family:var(--FH);font-size:15px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;background:transparent;color:var(--gray-4);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s;display:flex;align-items:center;gap:8px;white-space:nowrap}
-.tab-btn:hover{color:var(--gray-2)}.tab-btn.active{color:white;border-bottom-color:var(--red)}
-.tab-btn svg{width:16px;height:16px}
+/* ═══════════════════════════════════════════════════
+   AUTH SCREEN
+═══════════════════════════════════════════════════ */
+#auth-screen { min-height:100vh; display:flex; align-items:stretch }
+.auth-wrap { display:flex; width:100%; min-height:100vh }
 
-/* MAIN */
-.main{padding:22px 28px}
-.tab-panel{display:none}.tab-panel.active{display:block}
+.auth-brand {
+  flex:0 0 42%; background:var(--black); position:relative; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+}
+.auth-brand::before {
+  content:''; position:absolute; inset:0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,.03) 39px, rgba(255,255,255,.03) 40px),
+              repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,.03) 39px, rgba(255,255,255,.03) 40px);
+}
+.auth-brand::after {
+  content:''; position:absolute; bottom:0; left:0; right:0; height:4px; background:var(--red);
+}
+.auth-brand-inner { position:relative; z-index:2; padding:48px; max-width:360px }
+.auth-logo {
+  width: 74px;
+  height: 74px;
+  background: var(--red);
+  
+  /* Background image */
+  background-image: url('assets/on2cook-sq.png');
+  background-size: cover;        /* makes image fill the box */
+  background-position: center;   /* centers the image */
+  background-repeat: no-repeat;  /* prevents tiling */
 
-/* STAT CARDS */
-.stats-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px}
-.stat-card{background:white;border:1px solid var(--gray-2);padding:18px 20px 16px;position:relative;overflow:hidden;box-shadow:var(--sh-sm)}
-.stat-card::after{content:'';position:absolute;left:0;top:0;bottom:0;width:4px}
-.stat-card.s-total::after{background:var(--black)}.stat-card.s-crit::after{background:var(--c-crit)}
-.stat-card.s-high::after{background:var(--c-high)}.stat-card.s-sub::after{background:var(--gray-4)}
-.stat-card.s-vendor::after{background:#0060A0}
-.sc-label{font-size:9.5px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--gray-4);margin-bottom:7px}
-.sc-value{font-family:var(--FH);font-size:40px;font-weight:800;line-height:1;color:var(--black)}
-.s-crit .sc-value{color:var(--c-crit)}.s-high .sc-value{color:var(--c-high)}
-.sc-sub{font-size:11px;color:var(--gray-4);margin-top:5px}
+  display: flex;
+  align-items: center;
+  justify-content: center;
 
-/* TOOLBAR */
-.toolbar{background:white;border:1px solid var(--gray-2);padding:12px 16px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:14px;box-shadow:var(--sh-sm)}
-.sw{position:relative;flex:1;min-width:180px;max-width:280px}
-.sw svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:13px;height:13px;color:var(--gray-4);pointer-events:none}
-.sw input{width:100%;padding:8px 12px 8px 32px;border:1.5px solid var(--gray-2);font-size:13px;background:var(--gray-1);outline:none}
-.sw input:focus{border-color:var(--red);background:white}
-.sw input::placeholder{color:var(--gray-4)}
-.fsel{padding:8px 11px;border:1.5px solid var(--gray-2);font-size:12px;background:var(--gray-1);outline:none;cursor:pointer;min-width:120px}
-.fsel:focus{border-color:var(--red)}
-.divv{width:1px;height:28px;background:var(--gray-2)}
-.btn-s{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;font-family:var(--FH);font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;transition:all .15s;line-height:1}
-.btn-out{background:transparent;color:var(--black-3);border:1.5px solid var(--gray-3)}.btn-out:hover{background:var(--black);color:white;border-color:var(--black)}
-.btn-red{background:var(--red);color:white}.btn-red:hover{background:var(--red-dark)}
+  font-family: var(--FH);
+  font-size: 26px;
+  font-weight: 900;
+  color: white;
+  letter-spacing: -2px;
+  margin-bottom: 28px;
+}
+.auth-brand-name { font-family:var(--FH); font-size:42px; font-weight:900; color:white; letter-spacing:4px; line-height:1 }
+.auth-brand-tag { font-family:var(--FH); font-size:14px; font-weight:600; letter-spacing:5px; color:var(--red); text-transform:uppercase; margin-top:6px; margin-bottom:40px }
+.auth-divider { width:48px; height:3px; background:var(--red); margin-bottom:28px }
+.auth-brand-desc { font-size:13px; color:#888; line-height:1.7; margin-bottom:40px }
+.auth-brand-quote { font-family:var(--FH); font-style:italic; font-size:20px; font-weight:700; color:#555; line-height:1.4; border-left:3px solid var(--red); padding-left:16px; margin-bottom:40px }
+.auth-brand-dots { display:flex; gap:8px }
+.abd { width:8px; height:8px; border-radius:50%; background:#333; cursor:pointer; transition:background .2s }
+.abd.active { background:var(--red) }
 
-/* TABLE CARD */
-.table-card{background:white;border:1px solid var(--gray-2);box-shadow:var(--sh-sm);overflow:hidden}
-.tc-header{display:flex;align-items:center;justify-content:space-between;padding:13px 20px;background:var(--black-2);border-bottom:2px solid var(--red)}
-.tc-title{font-family:var(--FH);font-size:17px;font-weight:700;color:white;letter-spacing:1.5px;text-transform:uppercase}
-.tc-meta{font-family:var(--FM);font-size:11px;color:var(--gray-4)}
+.auth-form-panel {
+  flex:1; background:white; display:flex; align-items:center; justify-content:center;
+  padding:60px 48px; position:relative;
+}
+.auth-form-panel::before {
+  content:''; position:absolute; top:0; left:0; bottom:0; width:1px; background:var(--g2);
+}
+.auth-form-inner { width:100%; max-width:380px }
+.auth-form-eyebrow { font-family:var(--FH); font-size:12px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--red); margin-bottom:8px }
+.auth-form-title { font-family:var(--FH); font-size:34px; font-weight:800; color:var(--black); margin-bottom:32px; line-height:1.1 }
 
-/* BOM TABLE TH */
-.bth{background:var(--black-3);color:white;padding:10px 10px;font-family:var(--FH);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;white-space:nowrap;cursor:pointer;border-right:1px solid #3D3D3D;position:sticky;top:0;z-index:20;user-select:none}
-.bth:hover{background:#404040}
-.bth.sa::after{content:' ↑';color:var(--red)}.bth.sd::after{content:' ↓';color:var(--red)}
+.auth-error { background:var(--red-faint); border:1px solid #FFBBBB; border-left:4px solid var(--red); padding:12px 16px; font-size:13px; color:var(--red-dark); margin-bottom:20px }
 
-/* BOM table: auto-fit columns — no fixed min-width; table auto-layout */
-#bom-auto-table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:auto}
-#bom-auto-table th,#bom-auto-table td{white-space:nowrap}
+.auth-form { display:flex; flex-direction:column; gap:18px; margin-bottom:20px }
+.af-group { display:flex; flex-direction:column; gap:6px }
+.af-label { font-size:11px; font-weight:600; letter-spacing:1.5px; text-transform:uppercase; color:var(--g5) }
+.af-input {
+  padding:12px 14px; border:1.5px solid var(--g2); font-size:14px; background:var(--g1);
+  outline:none; transition:border-color .15s, background .15s; width:100%;
+}
+.af-input:focus { border-color:var(--red); background:white }
+.af-input::placeholder { color:var(--g4) }
+.af-btn {
+  padding:14px 24px; background:var(--black); color:white; font-family:var(--FH); font-size:16px; font-weight:700;
+  letter-spacing:1.5px; text-transform:uppercase; display:flex; align-items:center; justify-content:center; gap:10px;
+  transition:background .15s; margin-top:4px;
+}
+.af-btn:hover { background:var(--red) }
+.af-btn:disabled { background:var(--g4); cursor:not-allowed }
+.af-arrow { font-size:18px }
 
-/* EMPTY */
-.empty-state{padding:72px 32px;text-align:center}
-.empty-icon{font-size:56px;opacity:.15;margin-bottom:14px}
-.empty-title{font-family:var(--FH);font-size:28px;font-weight:700;color:var(--black-3);margin-bottom:8px}
-.empty-sub{font-size:13px;color:var(--gray-4)}
+.auth-switch { font-size:12.5px; color:var(--g5); margin-bottom:28px }
+.auth-switch a { color:var(--red); font-weight:600 }
 
-/* ADMIN */
-.adm-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:800;align-items:center;justify-content:center}
-.adm-ov.open{display:flex}
-.adm-panel{background:white;width:680px;max-width:96vw;max-height:94vh;overflow-y:auto;border-top:4px solid var(--red);box-shadow:0 32px 80px rgba(0,0,0,.55);animation:slideUp .22s ease}
-@keyframes slideUp{from{transform:translateY(24px);opacity:0}to{transform:translateY(0);opacity:1}}
-.adm-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;background:var(--black-2);border-bottom:1px solid var(--black-3)}
-.adm-lock{width:30px;height:30px;background:var(--red);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.adm-lock svg{width:14px;height:14px;color:white}
-.adm-title{font-family:var(--FH);font-size:19px;font-weight:800;color:white;letter-spacing:1px;text-transform:uppercase}
-.adm-sub{font-size:11px;color:var(--gray-4);margin-top:2px}
-.adm-close{width:30px;height:30px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--gray-3);transition:all .15s}
-.adm-close:hover{background:var(--red);color:white}
-.pin-screen{padding:36px 32px;text-align:center}
-.pin-icon{font-size:44px;margin-bottom:14px;opacity:.7}
-.pin-title{font-family:var(--FH);font-size:22px;font-weight:700;margin-bottom:6px}
-.pin-sub{font-size:12px;color:var(--gray-4);margin-bottom:28px}
-.pin-dots{display:flex;gap:12px;justify-content:center;margin-bottom:22px}
-.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--gray-3);transition:all .15s}
-.pin-dot.filled{background:var(--red);border-color:var(--red)}
-.pin-error{color:var(--red);font-size:12px;font-weight:600;min-height:18px;margin-bottom:10px}
-.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:240px;margin:0 auto}
-.pin-key{padding:16px 10px;text-align:center;font-family:var(--FH);font-size:22px;font-weight:700;background:var(--gray-1);border:1.5px solid var(--gray-2);transition:all .12s;cursor:pointer}
-.pin-key:hover{background:var(--red);color:white;border-color:var(--red)}.pin-key:active{transform:scale(.93)}
-.admin-body{display:none;padding:22px}.admin-body.visible{display:block}
-.adm-sec{margin-bottom:24px}
-.adm-sec-title{font-family:var(--FH);font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:11px;padding-bottom:7px;border-bottom:2px solid var(--gray-2);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.adm-sec-title svg{width:13px;height:13px}
-.badge{font-family:var(--FM);font-size:10px;background:var(--gray-2);color:var(--gray-5);padding:2px 7px}
-.db-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-.db-card{background:var(--gray-1);padding:14px;text-align:center;border:1px solid var(--gray-2)}
-.db-val{font-family:var(--FH);font-size:30px;font-weight:800;color:var(--black)}
-.db-lbl{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--gray-4);margin-top:4px}
-.db-ts{font-family:var(--FM);font-size:10px;color:var(--gray-4);margin-top:3px}
-.up-mode{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 14px;background:var(--gray-1);border:1px solid var(--gray-2);flex-wrap:wrap}
-.up-mode label{font-size:12px;font-weight:600;color:var(--gray-5);letter-spacing:.5px;text-transform:uppercase;white-space:nowrap}
-.up-mode select{padding:7px 11px;border:1.5px solid var(--gray-2);font-size:12px;background:white;outline:none;cursor:pointer;min-width:190px}
-.up-mode select:focus{border-color:var(--red)}
-.up-mode span{font-size:11px;color:var(--gray-4)}
-.up-cards{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px}
-.up-card{flex:1;min-width:200px;border:2px dashed var(--gray-3);padding:22px 16px;text-align:center;cursor:pointer;position:relative;transition:all .2s}
-.up-card:hover,.up-card.dragover{border-color:var(--red);background:var(--red-faint)}
-.up-card input{position:absolute;inset:0;opacity:0;cursor:pointer}
-.uc-icon{font-size:30px;margin-bottom:10px}
-.uc-title{font-family:var(--FH);font-size:17px;font-weight:700;margin-bottom:5px}
-.uc-sub{font-size:10.5px;color:var(--gray-4);line-height:1.5}
-.uc-ok{margin-top:9px;font-size:10.5px;font-weight:600;color:var(--c-ok)}
-.uc-ts{font-size:10px;color:var(--gray-4);margin-top:2px}
-.adm-note{background:var(--gray-1);border-left:3px solid var(--red);padding:12px 15px}
-.adm-note h5{font-family:var(--FH);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
-.adm-note ul{list-style:none}
-.adm-note li{font-size:11.5px;color:var(--gray-5);padding:2px 0;display:flex;gap:6px}
-.adm-note li::before{content:'→';color:var(--red);font-weight:700;flex-shrink:0}
-.prog-wrap{display:none;margin-top:12px}.prog-wrap.visible{display:block}
-.prog-label{font-family:var(--FM);font-size:12px;color:var(--gray-5);margin-bottom:5px}
-.prog-bar{height:3px;background:var(--gray-2);overflow:hidden}
-.prog-fill{height:100%;background:var(--red);width:30%;animation:prog .9s ease-in-out infinite alternate}
-@keyframes prog{from{margin-left:0;width:30%}to{margin-left:70%;width:30%}}
+.auth-role-info { background:var(--g1); border:1px solid var(--g2); padding:16px }
+.ari-title { font-family:var(--FH); font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--g4); margin-bottom:12px }
+.ari-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; font-size:12px; color:var(--g5) }
+.ari-row:last-child { margin-bottom:0 }
 
-/* TOAST */
-.toast{position:fixed;bottom:26px;right:26px;background:var(--black);color:white;padding:13px 20px;font-family:var(--FH);font-size:14px;font-weight:600;letter-spacing:.5px;box-shadow:var(--sh-md);z-index:9999;transform:translateX(120%);transition:transform .3s cubic-bezier(.3,0,.2,1);border-left:4px solid var(--red);max-width:360px}
-.toast.show{transform:translateX(0)}.toast.success{border-left-color:var(--c-ok)}.toast.error{border-left-color:var(--c-crit)}.toast.info{border-left-color:#0060A0}
+@media (max-width:768px) {
+  .auth-brand { display:none }
+  .auth-form-panel { padding:40px 24px }
+}
 
-::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:var(--gray-1)}::-webkit-scrollbar-thumb{background:var(--gray-3)}::-webkit-scrollbar-thumb:hover{background:var(--gray-4)}
-@media(max-width:900px){.stats-grid{grid-template-columns:repeat(3,1fr)}.main{padding:14px}}
-@media(max-width:600px){.stats-grid{grid-template-columns:repeat(2,1fr)}.brand-sub{display:none}}
+/* ═══════════════════════════════════════════════════
+   APP SCREEN — hidden by default, JS shows after auth
+═══════════════════════════════════════════════════ */
+#app-screen { display:none; flex-direction:column; min-height:100vh }
+
+/* ── NAVBAR ── */
+.navbar {
+  background:var(--black); height:64px; display:flex; align-items:center; justify-content:space-between;
+  padding:0 32px; border-bottom:3px solid var(--red); position:sticky; top:0; z-index:200; box-shadow:var(--sh-md);
+  gap:20px;
+}
+.nav-brand { display:flex; align-items:center; gap:14px; flex-shrink:0 }
+.nav-logo {
+  width: 45px;
+  height: 45px;
+  background: var(--red);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--FH);
+  font-size: 18px;
+  font-weight: 900;
+  color: white;
+  letter-spacing: -1.5px;
+  cursor: pointer;
+  user-select: none;
+  transition: transform .1s, box-shadow .2s;
+  flex-shrink: 0;
+
+  background-image: url("assets/on2cook-sq.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.nav-logo:active { transform:scale(.88) }
+.nav-logo.flash { box-shadow:0 0 0 6px rgba(209,0,0,.4) }
+.nav-brand-text { line-height:1 }
+.nav-brand-name { font-family:var(--FH); font-size:20px; font-weight:800; letter-spacing:2px; color:white }
+.nav-brand-name em { color:var(--red); font-style:normal }
+.nav-brand-sub { font-size:9px; letter-spacing:3px; text-transform:uppercase; color:var(--g4); margin-top:2px }
+
+/* ── NAV TABS (center) ── */
+.nav-tabs { display:flex; align-items:stretch; height:64px; gap:0; margin:0 auto }
+.nav-tab {
+  display:flex; align-items:center; gap:7px; padding:0 24px; font-family:var(--FH); font-size:14px; font-weight:700;
+  letter-spacing:1.5px; text-transform:uppercase; color:var(--g4); border-bottom:3px solid transparent;
+  margin-bottom:-3px; cursor:pointer; transition:all .15s; white-space:nowrap;
+}
+.nav-tab:hover { color:var(--g2) }
+.nav-tab.active { color:white; border-bottom-color:var(--red) }
+.nav-tab svg { width:15px; height:15px }
+
+/* ── NAV USER (right) ── */
+.nav-user { display:flex; align-items:center; gap:10px; flex-shrink:0 }
+#nav-user-info { display:flex; align-items:center; gap:10px }
+.nav-username { font-family:var(--FM); font-size:12px; color:var(--g4) }
+.nav-admin-btn {
+  padding:6px 14px; background:rgba(255,255,255,.08); color:var(--g3); border:1px solid rgba(255,255,255,.12);
+  font-family:var(--FH); font-size:12px; font-weight:700; letter-spacing:1px; text-transform:uppercase; transition:all .15s;
+}
+.nav-admin-btn:hover { background:var(--red); color:white; border-color:var(--red) }
+.nav-logout-btn {
+  padding:6px 14px; background:transparent; color:var(--g4); border:1px solid var(--black-4);
+  font-family:var(--FH); font-size:12px; font-weight:700; letter-spacing:1px; text-transform:uppercase; transition:all .15s;
+}
+.nav-logout-btn:hover { background:var(--black-3); color:white }
+
+/* DB status pill */
+.db-pill { display:flex; align-items:center; gap:6px; padding:5px 12px; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); font-family:var(--FM); font-size:10px; color:var(--g4) }
+.db-dot { width:6px; height:6px; border-radius:50%; background:var(--g4); transition:background .3s }
+.db-dot.green { background:#4CAF50; box-shadow:0 0 5px #4CAF5060 }
+.db-dot.yellow { background:#FFC107 }
+
+/* ── MAIN CONTENT ── */
+.app-main { flex:1; padding:28px 32px }
+.tab-panel { display:none }
+.tab-panel.active { display:block }
+
+/* ── ROLE BADGE ── */
+.role-badge {
+  display:inline-flex; align-items:center; padding:3px 10px; font-family:var(--FH); font-size:10px;
+  font-weight:800; letter-spacing:1.5px; text-transform:uppercase; flex-shrink:0;
+}
+.role-badge.admin  { background:var(--red); color:white }
+.role-badge.editor { background:#B87300; color:white }
+.role-badge.viewer { background:#1A4A7A; color:white }
+
+/* ── STAT CARDS ── */
+.stats-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:20px }
+.stat-card { background:white; border:1px solid var(--g2); padding:20px 20px 16px; position:relative; overflow:hidden; box-shadow:var(--sh-sm) }
+.stat-card::after { content:''; position:absolute; left:0; top:0; bottom:0; width:4px }
+.stat-card.s-total::after { background:var(--black) }
+.stat-card.s-crit::after  { background:var(--red) }
+.stat-card.s-high::after  { background:#D46000 }
+.stat-card.s-sub::after   { background:var(--g4) }
+.stat-card.s-vendor::after{ background:#0060A0 }
+.sc-label { font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--g4); margin-bottom:8px }
+.sc-value { font-family:var(--FH); font-size:40px; font-weight:800; line-height:1; color:var(--black) }
+.s-crit .sc-value { color:var(--red) }
+.s-high .sc-value { color:#D46000 }
+.sc-sub { font-size:11px; color:var(--g4); margin-top:5px }
+
+/* ── TOOLBAR ── */
+.toolbar {
+  background:white; border:1px solid var(--g2); padding:12px 16px; display:flex; align-items:center;
+  gap:9px; flex-wrap:wrap; margin-bottom:14px; box-shadow:var(--sh-sm);
+}
+.sw { position:relative; flex:1; min-width:180px; max-width:280px }
+.sw svg { position:absolute; left:10px; top:50%; transform:translateY(-50%); width:13px; height:13px; color:var(--g4); pointer-events:none }
+.sw input { width:100%; padding:8px 12px 8px 32px; border:1.5px solid var(--g2); font-size:13px; background:var(--g1); outline:none; transition:border-color .15s }
+.sw input:focus { border-color:var(--red); background:white }
+.sw input::placeholder { color:var(--g4) }
+.fsel { padding:8px 11px; border:1.5px solid var(--g2); font-size:12px; background:var(--g1); outline:none; cursor:pointer; min-width:120px }
+.fsel:focus { border-color:var(--red) }
+.divv { width:1px; height:28px; background:var(--g2) }
+.btn-s { display:inline-flex; align-items:center; gap:5px; padding:7px 14px; font-family:var(--FH); font-size:12px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; cursor:pointer; transition:all .15s; line-height:1 }
+.btn-out { background:transparent; color:var(--black-3); border:1.5px solid var(--g3) }
+.btn-out:hover { background:var(--black); color:white; border-color:var(--black) }
+.btn-red { background:var(--red); color:white; border:1.5px solid var(--red) }
+.btn-red:hover { background:var(--red-dark) }
+
+/* ── TABLE CARD ── */
+.table-card { background:white; border:1px solid var(--g2); box-shadow:var(--sh-sm); overflow:hidden }
+.tc-header { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; background:var(--black-2); border-bottom:2px solid var(--red) }
+.tc-title { font-family:var(--FH); font-size:17px; font-weight:700; color:white; letter-spacing:2px; text-transform:uppercase }
+.tc-meta { font-family:var(--FM); font-size:11px; color:var(--g4) }
+
+/* ── BOM TH ── */
+.bth { background:var(--black-3); color:white; padding:10px; font-family:var(--FH); font-size:10px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; white-space:nowrap; cursor:pointer; border-right:1px solid var(--black-4); position:sticky; top:0; z-index:20; user-select:none }
+.bth:hover { background:#404040 }
+.bth.sa::after { content:' ↑'; color:var(--red) }
+.bth.sd::after { content:' ↓'; color:var(--red) }
+#bom-auto-table { width:100%; border-collapse:collapse; font-size:12.5px; table-layout:auto }
+#bom-auto-table th, #bom-auto-table td { white-space:nowrap }
+
+/* ── PROC TAB ── */
+.proc-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px }
+.proc-stat { background:white; border:1px solid var(--g2); padding:18px 20px; border-left:4px solid var(--red); box-shadow:var(--sh-sm) }
+.proc-stat-val { font-family:var(--FH); font-size:38px; font-weight:800; color:var(--black); line-height:1 }
+.proc-stat-lbl { font-family:var(--FH); font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--black); margin-top:4px }
+.proc-stat-sub { font-size:11px; color:var(--g4); margin-top:3px }
+.proc-toolbar { background:white; border:1px solid var(--g2); padding:12px 16px; display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap }
+
+/* Vendor sections */
+.vendor-section { background:white; border:1px solid var(--g2); margin-bottom:10px; box-shadow:var(--sh-sm); overflow:hidden }
+.vendor-hdr {
+  display:flex; align-items:center; justify-content:space-between; padding:16px 20px; cursor:pointer;
+  background:white; transition:background .12s; gap:16px; flex-wrap:wrap;
+}
+.vendor-hdr:hover { background:var(--g1) }
+.vendor-hdr-left  { display:flex; align-items:center; gap:12px }
+.vendor-hdr-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+.vendor-chevron { font-size:11px; color:var(--g4); width:16px; flex-shrink:0 }
+.vendor-logo-block { width:38px; height:38px; background:var(--black); color:white; display:flex; align-items:center; justify-content:center; font-family:var(--FH); font-size:14px; font-weight:800; flex-shrink:0 }
+.vendor-name { font-family:var(--FH); font-size:17px; font-weight:700; color:var(--black) }
+.vendor-meta { font-size:11px; color:var(--g4); margin-top:2px }
+.vendor-body { border-top:1px solid var(--g2) }
+
+/* Quote pill */
+.quote-pill { display:inline-flex; align-items:center; padding:5px 12px; font-family:var(--FM); font-size:10.5px; font-weight:600 }
+.quote-pill.quoted { background:#EAFBEA; color:#1A7A1A; border:1px solid #A0E0A0 }
+.quote-pill.no-quote { background:var(--g1); color:var(--g4); border:1px solid var(--g2); font-style:italic }
+.quote-upload-btn {
+  display:inline-flex; align-items:center; padding:6px 14px; background:var(--black); color:white;
+  font-family:var(--FH); font-size:11px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; cursor:pointer;
+  transition:background .15s;
+}
+.quote-upload-btn:hover { background:var(--red) }
+
+/* Cell editing */
+.cell-input { border:1.5px solid var(--g3); font-family:var(--FM); font-size:11.5px; background:white; outline:none; padding:5px 7px }
+.cell-input:focus { border-color:var(--red) }
+
+/* ── EMPTY ── */
+.empty-state { padding:72px 32px; text-align:center }
+.empty-icon  { font-size:56px; opacity:.15; margin-bottom:14px }
+.empty-title { font-family:var(--FH); font-size:28px; font-weight:700; color:var(--black-3); margin-bottom:8px }
+.empty-sub   { font-size:13px; color:var(--g4) }
+
+/* ── ADMIN OVERLAY ── */
+.adm-ov { display:none; position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:800; align-items:flex-start; justify-content:flex-end }
+.adm-ov.open { display:flex }
+.adm-panel {
+  background:white; width:720px; max-width:96vw; height:100vh; overflow-y:auto;
+  border-left:4px solid var(--red); box-shadow:-32px 0 80px rgba(0,0,0,.4); animation:slideIn .22s ease;
+}
+@keyframes slideIn { from { transform:translateX(100%); opacity:0 } to { transform:translateX(0); opacity:1 } }
+.adm-hdr { display:flex; align-items:center; justify-content:space-between; padding:18px 24px; background:var(--black-2); position:sticky; top:0; z-index:10; border-bottom:2px solid var(--red) }
+.adm-hdr-left { display:flex; align-items:center; gap:12px }
+.adm-icon { width:32px; height:32px; background:var(--red); display:flex; align-items:center; justify-content:center }
+.adm-icon svg { width:14px; height:14px; color:white }
+.adm-title { font-family:var(--FH); font-size:20px; font-weight:800; color:white; letter-spacing:1.5px; text-transform:uppercase }
+.adm-sub { font-size:11px; color:var(--g4); margin-top:2px }
+.adm-close { width:32px; height:32px; background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; font-size:18px; color:var(--g3); transition:all .15s }
+.adm-close:hover { background:var(--red); color:white }
+
+/* Admin PIN */
+.pin-screen { padding:40px 32px; text-align:center }
+.pin-icon { font-size:44px; margin-bottom:14px; opacity:.7 }
+.pin-title { font-family:var(--FH); font-size:24px; font-weight:700; margin-bottom:6px }
+.pin-sub { font-size:12px; color:var(--g4); margin-bottom:30px }
+.pin-dots { display:flex; gap:12px; justify-content:center; margin-bottom:20px }
+.pin-dot { width:14px; height:14px; border-radius:50%; border:2px solid var(--g3); transition:all .15s }
+.pin-dot.filled { background:var(--red); border-color:var(--red) }
+.pin-error { color:var(--red); font-size:12px; font-weight:600; min-height:18px; margin-bottom:12px }
+.pin-pad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; max-width:240px; margin:0 auto }
+.pin-key { padding:16px 10px; text-align:center; font-family:var(--FH); font-size:22px; font-weight:700; background:var(--g1); border:1.5px solid var(--g2); transition:all .12s; cursor:pointer }
+.pin-key:hover { background:var(--red); color:white; border-color:var(--red) }
+.pin-key:active { transform:scale(.93) }
+
+/* Admin body sections */
+.admin-body { display:none; padding:24px }
+.admin-body.visible { display:block }
+.adm-sec { margin-bottom:28px }
+.adm-sec-title { font-family:var(--FH); font-size:13px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:12px; padding-bottom:8px; border-bottom:2px solid var(--g2); display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+.adm-sec-title svg { width:13px; height:13px }
+.adm-badge { font-family:var(--FM); font-size:10px; background:var(--g2); color:var(--g5); padding:2px 8px }
+
+/* DB grid */
+.db-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px }
+.db-card { background:var(--g1); padding:14px; text-align:center; border:1px solid var(--g2) }
+.db-val { font-family:var(--FH); font-size:30px; font-weight:800; color:var(--black) }
+.db-lbl { font-size:10px; font-weight:600; letter-spacing:1.5px; text-transform:uppercase; color:var(--g4); margin-top:4px }
+.db-ts  { font-family:var(--FM); font-size:10px; color:var(--g4); margin-top:3px }
+
+/* Upload cards */
+.up-mode { display:flex; align-items:center; gap:10px; margin-bottom:12px; padding:10px 14px; background:var(--g1); border:1px solid var(--g2); flex-wrap:wrap }
+.up-mode label { font-size:11px; font-weight:700; color:var(--g5); letter-spacing:1px; text-transform:uppercase }
+.up-mode select { padding:7px 11px; border:1.5px solid var(--g2); font-size:12px; background:white; outline:none; cursor:pointer }
+.up-mode select:focus { border-color:var(--red) }
+.up-cards { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px }
+.up-card { flex:1; min-width:220px; border:2px dashed var(--g3); padding:22px 18px; text-align:center; cursor:pointer; position:relative; transition:all .2s }
+.up-card:hover,.up-card.dragover { border-color:var(--red); background:var(--red-faint) }
+.up-card input { position:absolute; inset:0; opacity:0; cursor:pointer }
+.uc-icon { font-size:30px; margin-bottom:10px }
+.uc-title { font-family:var(--FH); font-size:17px; font-weight:700; margin-bottom:5px }
+.uc-sub { font-size:10.5px; color:var(--g4); line-height:1.6 }
+.uc-ok { margin-top:9px; font-size:10.5px; font-weight:600; color:var(--ok) }
+
+/* User management table */
+.user-table { width:100%; border-collapse:collapse; font-size:12.5px }
+.user-table th { background:var(--black-3); color:white; padding:9px 12px; font-family:var(--FH); font-size:10px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; text-align:left }
+.user-table td { padding:9px 12px; border-bottom:1px solid var(--g2); vertical-align:middle }
+.user-table tr:hover td { background:var(--g1) }
+.role-sel { padding:5px 9px; border:1.5px solid var(--g2); font-family:var(--FH); font-size:11px; font-weight:700; background:white; cursor:pointer; outline:none }
+.role-sel:focus { border-color:var(--red) }
+.save-role-btn { padding:5px 12px; background:var(--black); color:white; font-family:var(--FH); font-size:11px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; transition:background .15s }
+.save-role-btn:hover { background:var(--red) }
+
+/* Tab permission checkboxes */
+.perm-wrap { display:flex; flex-direction:column; gap:5px; margin-top:4px }
+.perm-row  { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--g5) }
+.perm-row input[type=checkbox] { accent-color:var(--red); width:13px; height:13px; cursor:pointer }
+.perm-all-row { font-weight:700; color:var(--black) }
+.perm-disabled { opacity:.35; pointer-events:none }
+
+/* Notes */
+.adm-note { background:var(--g1); border-left:3px solid var(--red); padding:12px 16px; margin-top:12px }
+.adm-note h5 { font-family:var(--FH); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px }
+.adm-note li { font-size:11.5px; color:var(--g5); padding:2px 0; display:flex; gap:6px; list-style:none }
+.adm-note li::before { content:'→'; color:var(--red); font-weight:700; flex-shrink:0 }
+
+/* Progress */
+.prog-wrap { display:none; margin-top:12px }
+.prog-wrap.visible { display:block }
+.prog-label { font-family:var(--FM); font-size:12px; color:var(--g5); margin-bottom:5px }
+.prog-bar { height:3px; background:var(--g2); overflow:hidden }
+.prog-fill { height:100%; background:var(--red); width:30%; animation:prog .9s ease-in-out infinite alternate }
+@keyframes prog { from{margin-left:0;width:30%} to{margin-left:70%;width:30%} }
+
+/* ── FOOTER ── */
+/* ── FOOTER (COMPACT VERSION) ── */
+.app-footer {
+  background: var(--black);
+  border-top: 2px solid var(--red); /* Thinner border */
+  padding: 0;
+  margin-top: auto;
+}
+
+.footer-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px; /* Reduced from 18px 12px */
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.footer-logo {
+  width: 28px; /* Reduced from 36px */
+  height: 28px; /* Reduced from 36px */
+  background: var(--red);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--FH);
+  font-size: 13px; /* Smaller font */
+  font-weight: 900;
+  color: white;
+  letter-spacing: -1px;
+}
+
+.footer-brand-name {
+  font-family: var(--FH);
+  font-size: 14px; /* Reduced from 17px */
+  font-weight: 800;
+  color: white;
+  letter-spacing: 1.5px;
+}
+
+.footer-links {
+  display: flex;
+  gap: 16px; /* Reduced gap */
+}
+
+.footer-link {
+  font-size: 11px; /* Reduced from 12px */
+  letter-spacing: 1px;
+}
+
+.footer-bottom {
+  border-top: 1px solid #1E1E1E;
+  padding: 6px 20px; /* Reduced from 14px 32px */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.footer-copy, .footer-version {
+  font-size: 10px; /* Unified smaller size */
+}
+
+/* ── TOAST ── */
+.toast {
+  position:fixed; bottom:28px; right:28px; background:var(--black); color:white; padding:13px 20px;
+  font-family:var(--FH); font-size:14px; font-weight:600; letter-spacing:.5px; box-shadow:var(--sh-lg); z-index:9999;
+  transform:translateX(120%); transition:transform .3s cubic-bezier(.3,0,.2,1); border-left:4px solid var(--red); max-width:360px;
+}
+.toast.show { transform:translateX(0) }
+.toast.success { border-left-color:var(--ok) }
+.toast.error   { border-left-color:var(--red) }
+.toast.info    { border-left-color:#0060A0 }
+
+@media (max-width:1024px) { .stats-grid { grid-template-columns:repeat(3,1fr) } }
+@media (max-width:900px)  { .app-main { padding:16px } .stats-grid { grid-template-columns:repeat(2,1fr) } .navbar { padding:0 16px } .nav-tabs { display:none } }
 </style>
 </head>
 <body>
 
-<!-- HEADER -->
-<header class="hdr">
-  <div style="display:flex;align-items:center;gap:14px">
-    <div class="logo-block" id="logo-block" title="Click 5× quickly for admin">O2</div>
-    <div>
-      <div class="brand-name">ON2COOK <em>BOM</em> PORTAL</div>
-      <div class="brand-sub">Bill of Materials Management System</div>
-    </div>
-  </div>
-  <div class="db-pill"><div class="db-dot" id="db-dot"></div><span id="db-status-text">Connecting…</span></div>
-</header>
+<!-- ═══════════════════════════════════════════
+     AUTH SCREEN
+═══════════════════════════════════════════ -->
+<div id="auth-screen"></div>
 
-<!-- TABS — 2 only -->
-<div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('bom')" id="tab-bom">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-    Device BOM
-  </button>
-  <button class="tab-btn" onclick="switchTab('store')" id="tab-store">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
-    Store Inventory
-  </button>
-</div>
+<!-- ═══════════════════════════════════════════
+     MAIN APP (hidden until auth)
+═══════════════════════════════════════════ -->
+<div id="app-screen" aria-hidden="true">
 
-<main class="main">
-
-<!-- ═══ DEVICE BOM ═══ -->
-<div class="tab-panel active" id="panel-bom">
-
-  <div class="stats-grid">
-    <div class="stat-card s-total"><div class="sc-label">Total Unique Parts</div><div class="sc-value" id="bs-total">—</div><div class="sc-sub">Unique part numbers</div></div>
-    <div class="stat-card s-crit"><div class="sc-label">Critical (&gt;60d)</div><div class="sc-value" id="bs-crit">—</div><div class="sc-sub">Highest risk lead time</div></div>
-    <div class="stat-card s-high"><div class="sc-label">High (30–60d)</div><div class="sc-value" id="bs-high">—</div><div class="sc-sub">Needs attention</div></div>
-    <div class="stat-card s-sub"><div class="sc-label">Sub-Assemblies</div><div class="sc-value" id="bs-sa">—</div><div class="sc-sub">Total modules</div></div>
-    <div class="stat-card s-vendor"><div class="sc-label">Total BOM Cost</div><div class="sc-value" id="bs-val" style="font-size:24px;color:#0060A0">—</div><div class="sc-sub">Sum all parts</div></div>
-  </div>
-
-  <div class="toolbar">
-    <div class="sw">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" id="bom-search" placeholder="Search Part Number or Name…" oninput="handleBomSearch(this.value)">
-    </div>
-    <div class="divv"></div>
-    <select class="fsel" id="bom-sa"   onchange="bomSAFilter=this.value;_applyBomFilters()"><option value="">All Sub-Assemblies</option></select>
-    <select class="fsel" id="bom-type" onchange="bomTypeFilter=this.value;_applyBomFilters()"><option value="">All Part Types</option></select>
-    <select class="fsel" id="bom-urg"  onchange="bomUrgFilter=this.value;_applyBomFilters()">
-      <option value="">All Urgency</option>
-      <option value="critical">Critical (&gt;60d)</option>
-      <option value="high">High (30–60d)</option>
-      <option value="medium">Medium (14–30d)</option>
-      <option value="low">Low (&lt;14d)</option>
-    </select>
-    <div class="divv"></div>
-    <button class="btn-s btn-out" onclick="clearBomFilters()">✕ Clear</button>
-    <span id="bom-count" style="font-family:var(--FM);font-size:11px;color:var(--gray-5);margin-left:auto"></span>
-    <button class="btn-s btn-out" onclick="exportBOM()">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Export BOM
-    </button>
-  </div>
-
-  <div class="table-card">
-    <div class="tc-header"><div class="tc-title">Device BOM — Unique Parts</div><div class="tc-meta" id="bom-meta">No data</div></div>
-    <div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 320px)">
-      <!-- table-layout:auto lets columns auto-size to content -->
-      <table id="bom-auto-table">
-        <thead id="bom-head">
-          <tr>
-            <th class="bth" data-k="partNumber"          onclick="bomSort('partNumber')"          >Part Number</th>
-            <th class="bth" data-k="partName"            onclick="bomSort('partName')"            >Part Name</th>
-            <th class="bth" data-k="partDesc"            onclick="bomSort('partDesc')"            >Part Description</th>
-            <th class="bth" data-k="hsnCode"             onclick="bomSort('hsnCode')"             >HSN Code</th>
-            <th class="bth" data-k="partType"            onclick="bomSort('partType')"            >Part Type</th>
-            <th class="bth" data-k="reworkRequired"      onclick="bomSort('reworkRequired')"      >Rework Req.</th>
-            <th class="bth" data-k="material"            onclick="bomSort('material')"            >Material</th>
-            <th class="bth" data-k="unitRateVendor"      onclick="bomSort('unitRateVendor')"      style="text-align:right">Currency (Unit Rate)</th>
-            <th class="bth" data-k="quantity"            onclick="bomSort('quantity')"            style="text-align:right">Total Qty</th>
-            <th class="bth" data-k="uom"                 onclick="bomSort('uom')"                 >UOM</th>
-            <th class="bth" data-k="totalUnitCost"       onclick="bomSort('totalUnitCost')"       style="text-align:right">O2C Unit Cost</th>
-            <th class="bth" data-k="customDuty"          onclick="bomSort('customDuty')"          style="text-align:right">Custom Duty</th>
-            <th class="bth" data-k="surchargePercent"    onclick="bomSort('surchargePercent')"    style="text-align:right">Surcharge %</th>
-            <th class="bth" data-k="dutyPercent"         onclick="bomSort('dutyPercent')"         style="text-align:right">Duty %</th>
-            <th class="bth" data-k="totalFreight"        onclick="bomSort('totalFreight')"        style="text-align:right">Total Freight</th>
-            <th class="bth" data-k="totalUnitLandedCost" onclick="bomSort('totalUnitLandedCost')" style="text-align:right">Total Unit Landed Cost</th>
-            <th class="bth" data-k="supplierName"        onclick="bomSort('supplierName')"        >Supplier Name</th>
-            <th class="bth" data-k="country"             onclick="bomSort('country')"             >Country</th>
-            <th class="bth" data-k="leadTime"            onclick="bomSort('leadTime')"            >Lead Time</th>
-            <th class="bth" data-k="urgency"             onclick="bomSort('urgency')"             >Urgency</th>
-            <th class="bth" data-k="subAssemblyId"       onclick="bomSort('subAssemblyId')"       style="min-width:200px">Sub-Assembly Breakdown</th>
-          </tr>
-        </thead>
-        <tbody id="bom-tbody" style="border-top:1px solid var(--gray-2)"></tbody>
-      </table>
-      <div class="empty-state" id="bom-empty">
-        <div class="empty-icon">📋</div>
-        <div class="empty-title">No BOM Data Loaded</div>
-        <div class="empty-sub">Ask admin to upload the Device BOM Excel file</div>
+  <!-- NAVBAR -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="nav-logo" id="nav-logo" title="On2Cook BOM Portal"></div>
+      <div class="nav-brand-text">
+        <div class="nav-brand-name">ON2COOK <em>BOM</em></div>
+        <div class="nav-brand-sub">Management Portal</div>
       </div>
     </div>
-  </div>
-</div><!-- /panel-bom -->
 
-<!-- ═══ STORE INVENTORY ═══ -->
-<div class="tab-panel" id="panel-store">
-  <div id="store-area">
-    <div class="empty-state">
-      <div class="empty-icon">📦</div>
-      <div class="empty-title">No Store Inventory Data</div>
-      <div class="empty-sub">Ask admin to upload the Store Inventory file</div>
+    <nav class="nav-tabs">
+      <button class="nav-tab active" id="tab-bom" onclick="switchTab('bom')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Device BOM
+      </button>
+      <button class="nav-tab" id="tab-store" onclick="switchTab('store')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+        Store Inventory
+      </button>
+      <button class="nav-tab" id="tab-proc" onclick="switchTab('proc')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        Procurement
+      </button>
+    </nav>
+
+    <div class="nav-user">
+      <div class="db-pill"><div class="db-dot" id="db-dot"></div><span id="db-status-text">Connecting…</span></div>
+      <div id="nav-user-info"></div>
     </div>
-  </div>
-</div><!-- /panel-store -->
+  </header>
 
-</main>
+  <!-- MAIN CONTENT -->
+  <main class="app-main">
 
-<!-- ADMIN OVERLAY -->
+
+    <!-- ═══ DEVICE BOM ═══ -->
+    <div class="tab-panel active" id="panel-bom">
+      <div class="stats-grid">
+        <div class="stat-card s-total"><div class="sc-label">Unique Parts</div><div class="sc-value" id="bs-total">—</div><div class="sc-sub">Part numbers</div></div>
+        <div class="stat-card s-crit"><div class="sc-label">Critical</div><div class="sc-value" id="bs-crit">—</div><div class="sc-sub">&gt;60d lead time</div></div>
+        <div class="stat-card s-high"><div class="sc-label">High Priority</div><div class="sc-value" id="bs-high">—</div><div class="sc-sub">30–60d lead time</div></div>
+        <div class="stat-card s-sub"><div class="sc-label">Sub-Assemblies</div><div class="sc-value" id="bs-sa">—</div><div class="sc-sub">Unique modules</div></div>
+        <div class="stat-card s-vendor"><div class="sc-label">Total BOM Cost</div><div class="sc-value" id="bs-val" style="font-size:24px;color:#0060A0">—</div><div class="sc-sub">All parts combined</div></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="sw">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="bom-search" placeholder="Search Part Number or Name…" oninput="handleBomSearch(this.value)">
+        </div>
+        <div class="divv"></div>
+        <select class="fsel" id="bom-sa"   onchange="bomSAFilter=this.value;_applyBomFilters()"><option value="">All Sub-Assemblies</option></select>
+        <select class="fsel" id="bom-type" onchange="bomTypeFilter=this.value;_applyBomFilters()"><option value="">All Part Types</option></select>
+        <select class="fsel" id="bom-urg"  onchange="bomUrgFilter=this.value;_applyBomFilters()">
+          <option value="">All Urgency</option>
+          <option value="critical">Critical (&gt;60d)</option>
+          <option value="high">High (30–60d)</option>
+          <option value="medium">Medium (14–30d)</option>
+          <option value="low">Low (&lt;14d)</option>
+        </select>
+        <div class="divv"></div>
+        <button class="btn-s btn-out" onclick="clearBomFilters()">✕ Clear</button>
+        <span id="bom-count" style="font-family:var(--FM);font-size:11px;color:var(--g5);margin-left:auto"></span>
+        <button class="btn-s btn-out" onclick="exportBOM()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export
+        </button>
+      </div>
+
+      <div class="table-card">
+        <div class="tc-header">
+          <div class="tc-title">Device BOM — Unique Parts</div>
+          <div class="tc-meta" id="bom-meta">No data</div>
+        </div>
+        <div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 330px)">
+          <table id="bom-auto-table">
+            <thead id="bom-head">
+              <tr>
+                <th class="bth" data-k="partNumber"          onclick="bomSort('partNumber')"          >Part Number</th>
+                <th class="bth" data-k="partName"            onclick="bomSort('partName')"            >Part Name</th>
+                <th class="bth" data-k="partDesc"            onclick="bomSort('partDesc')"            >Description</th>
+                <th class="bth" data-k="hsnCode"             onclick="bomSort('hsnCode')"             >HSN Code</th>
+                <th class="bth" data-k="partType"            onclick="bomSort('partType')"            >Type</th>
+                <th class="bth" data-k="reworkRequired"      onclick="bomSort('reworkRequired')"      >Rework</th>
+                <th class="bth" data-k="material"            onclick="bomSort('material')"            >Material</th>
+                <th class="bth" data-k="unitRateVendor"      onclick="bomSort('unitRateVendor')"      style="text-align:right">Currency · Rate</th>
+                <th class="bth" data-k="quantity"            onclick="bomSort('quantity')"            style="text-align:right">Total Qty</th>
+                <th class="bth" data-k="uom"                 onclick="bomSort('uom')"                 >UOM</th>
+                <th class="bth" data-k="totalUnitCost"       onclick="bomSort('totalUnitCost')"       style="text-align:right">O2C Unit Cost</th>
+                <th class="bth" data-k="customDuty"          onclick="bomSort('customDuty')"          style="text-align:right">Custom Duty</th>
+                <th class="bth" data-k="surchargePercent"    onclick="bomSort('surchargePercent')"    style="text-align:right">Surcharge %</th>
+                <th class="bth" data-k="dutyPercent"         onclick="bomSort('dutyPercent')"         style="text-align:right">Duty %</th>
+                <th class="bth" data-k="totalFreight"        onclick="bomSort('totalFreight')"        style="text-align:right">Freight</th>
+                <th class="bth" data-k="totalUnitLandedCost" onclick="bomSort('totalUnitLandedCost')" style="text-align:right">Landed Cost</th>
+                <th class="bth" data-k="supplierName"        onclick="bomSort('supplierName')"        >Supplier</th>
+                <th class="bth" data-k="country"             onclick="bomSort('country')"             >Country</th>
+                <th class="bth" data-k="leadTime"            onclick="bomSort('leadTime')"            >Lead Time</th>
+                <th class="bth" data-k="urgency"             onclick="bomSort('urgency')"             >Urgency</th>
+                <th class="bth" data-k="subAssemblyId"       onclick="bomSort('subAssemblyId')"       style="min-width:200px">SA Breakdown</th>
+              </tr>
+            </thead>
+            <tbody id="bom-tbody" style="border-top:1px solid var(--g2)"></tbody>
+          </table>
+          <div class="empty-state" id="bom-empty">
+            <div class="empty-icon">📋</div>
+            <div class="empty-title">No BOM Data Loaded</div>
+            <div class="empty-sub">Admin must upload the Device BOM Excel file</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /panel-bom -->
+
+    <!-- ═══ STORE INVENTORY ═══ -->
+    <div class="tab-panel" id="panel-store">
+      <div id="store-area">
+        <div class="empty-state">
+          <div class="empty-icon">📦</div>
+          <div class="empty-title">No Store Inventory Data</div>
+          <div class="empty-sub">Admin must upload the Store Inventory Excel file</div>
+        </div>
+      </div>
+    </div><!-- /panel-store -->
+
+    <!-- ═══ PROCUREMENT ═══ -->
+    <div class="tab-panel" id="panel-proc">
+      <div id="proc-area">
+        <div class="empty-state">
+          <div class="empty-icon">🛒</div>
+          <div class="empty-title">No Procurement Data</div>
+          <div class="empty-sub">Load Device BOM to see vendor groupings and manage procurement</div>
+        </div>
+      </div>
+    </div><!-- /panel-proc -->
+
+  </main>
+
+  <!-- FOOTER -->
+  <!-- <footer class="app-footer">
+    <div class="footer-main">
+      <div class="footer-brand">
+        <div class="footer-logo">O2</div>
+        <div class="footer-brand-text">
+          <div class="footer-brand-name">ON2COOK <em>BOM</em></div>
+          <div class="footer-brand-sub">Bill of Materials Management</div>
+        </div>
+      </div>
+      <div class="footer-links">
+        <span class="footer-link" onclick="switchTab('bom')">Device BOM</span>
+        <span class="footer-link" onclick="switchTab('store')">Store Inventory</span>
+        <span class="footer-link" onclick="switchTab('proc')">Procurement</span>
+      </div>
+      <div class="footer-user" id="footer-user-info"></div>
+    </div>
+    <div class="footer-bottom">
+      <span class="footer-copy">© 2025 On2Cook. All rights reserved. Internal use only.</span>
+      <span class="footer-version">BOM Portal v2.0 · <span id="footer-db-status">Connecting…</span></span>
+    </div>
+  </footer> -->
+
+</div><!-- /app-screen -->
+
+<!-- ═══════════════════════════════════════════
+     ADMIN OVERLAY (slide-in panel from right)
+═══════════════════════════════════════════ -->
 <div class="adm-ov" id="admin-overlay" onclick="handleAdminOverlayClick(event)">
   <div class="adm-panel">
     <div class="adm-hdr">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div class="adm-lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-        <div><div class="adm-title">Admin — Data Management</div><div class="adm-sub">Restricted · Authorised personnel only</div></div>
+      <div class="adm-hdr-left">
+        <div class="adm-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <div>
+          <div class="adm-title">Admin Panel</div>
+          <div class="adm-sub">Restricted · Authorised personnel only</div>
+        </div>
       </div>
       <button class="adm-close" onclick="closeAdmin()">✕</button>
     </div>
 
-    <!-- PIN -->
+    <!-- PIN Screen -->
     <div class="pin-screen" id="pin-screen">
       <div class="pin-icon">🔐</div>
       <div class="pin-title">Enter Admin PIN</div>
-      <div class="pin-sub">4-digit PIN to access data management</div>
+      <div class="pin-sub">4-digit PIN to access the admin panel</div>
       <div class="pin-dots" id="pin-dots">
         <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
         <div class="pin-dot" id="pd2"></div><div class="pin-dot" id="pd3"></div>
@@ -314,90 +697,94 @@ select,input{font-family:inherit}
       </div>
     </div>
 
-    <!-- Admin body -->
+    <!-- Admin Body -->
     <div class="admin-body" id="admin-body">
 
-      <!-- DB status -->
+      <!-- DB Status -->
       <div class="adm-sec">
         <div class="adm-sec-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-          Database Status <span class="badge">Connected</span>
+          Database Status <span class="adm-badge">Live</span>
         </div>
         <div class="db-grid">
-          <div class="db-card"><div class="db-val" id="adb-parts">—</div><div class="db-lbl">BOM Parts</div><div class="db-ts" id="adb-bom-ts">Not loaded</div></div>
-          <div class="db-card"><div class="db-val" id="adb-inv">—</div><div class="db-lbl">Store Items</div><div class="db-ts" id="adb-inv-ts">Not loaded</div></div>
+          <div class="db-card"><div class="db-val" id="adb-parts">—</div><div class="db-lbl">BOM Parts</div><div class="db-ts" id="adb-bom-ts">—</div></div>
+          <div class="db-card"><div class="db-val" id="adb-inv">—</div><div class="db-lbl">Store Items</div><div class="db-ts" id="adb-inv-ts">—</div></div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn-s btn-out" onclick="adminRefreshStats()">↺ Refresh</button>
+          <button class="btn-s btn-out" onclick="adminRefreshStats()">↺ Refresh Stats</button>
           <button class="btn-s" style="background:#8B0000;color:white;padding:7px 14px;font-family:var(--FH);font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase" onclick="adminClearAll()">✕ Clear All Data</button>
         </div>
       </div>
 
-      <!-- Upload — 2 cards -->
+      <!-- Upload Files -->
       <div class="adm-sec">
         <div class="adm-sec-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
-          Upload Files <span class="badge">.xlsx / .xls only</span>
+          Upload Files <span class="adm-badge">.xlsx / .xls</span>
         </div>
-
         <div class="up-mode">
           <label for="upload-mode">Mode</label>
           <select id="upload-mode">
             <option value="replace">Replace All (wipe + reinsert)</option>
             <option value="merge">Merge / Update only</option>
           </select>
-          <span><strong>Replace</strong> — safest for full revisions &nbsp;·&nbsp; <strong>Merge</strong> — keeps untouched rows</span>
+          <span style="font-size:11px;color:var(--g4)"><strong>Replace</strong> is safest for full revisions</span>
         </div>
-
         <div class="up-cards">
-
-          <!-- Device BOM -->
-          <div class="up-card" id="uc-bom"
-               ondragover="ucDragOver(event,'bom')" ondragleave="ucDragLeave('bom')" ondrop="ucDrop(event,'bom')">
+          <div class="up-card" id="uc-bom" ondragover="ucDragOver(event,'bom')" ondragleave="ucDragLeave('bom')" ondrop="ucDrop(event,'bom')">
             <input type="file" accept=".xlsx,.xls" onchange="ucSelect(event,'bom')">
             <div class="uc-icon">📋</div>
             <div class="uc-title">Device BOM</div>
-            <div class="uc-sub">
-              <strong>Tab 1 — Unique Parts (master + cost data):</strong><br>
-              Part Number · Part Name · Quantity (total) · Unit of Measurement · Unit Rate · Vendor Currency · Exchange Rate · Unit Cost INR · Total Unit Cost · Custom Duty · Surcharge · Total Custom Duty · Surcharge % · Duty % · Freight Only · Other Expenses · Total Freight · Total Unit Landed Cost · Total BOM Cost · Supplier Name · Country · Lead Time · Finalized<br><br>
-              <strong>Tabs 2+ — Sub-Assembly tabs (e.g. O2C-EC-SA-001):</strong><br>
-              Finalized · S.No. · Photo · Part Number · Part Name · Part Description · HSN Code · Part Type · Rework Required · Rework Drawing Reference · Part Sub-Category · Part Category · Material of Construction · Revision No. · Quantity (in this SA) · Unit of Measurement<br>
-              <em style="color:#999">No cost columns needed in SA tabs — costs come from Tab 1.</em>
-            </div>
+            <div class="uc-sub">Tab 1: master parts with cost data. Tabs 2+: sub-assembly breakdowns named by SA ID.</div>
             <div class="uc-ok" id="uc-bom-ok" style="display:none">✓ Loaded</div>
-            <div class="uc-ts" id="uc-bom-ts"></div>
+            <div style="font-size:10px;color:var(--g4);margin-top:4px" id="uc-bom-ts"></div>
           </div>
-
-          <!-- Store Inventory -->
-          <div class="up-card" id="uc-inv"
-               ondragover="ucDragOver(event,'inv')" ondragleave="ucDragLeave('inv')" ondrop="ucDrop(event,'inv')">
+          <div class="up-card" id="uc-inv" ondragover="ucDragOver(event,'inv')" ondragleave="ucDragLeave('inv')" ondrop="ucDrop(event,'inv')">
             <input type="file" accept=".xlsx,.xls" onchange="ucSelect(event,'inv')">
             <div class="uc-icon">📦</div>
             <div class="uc-title">Store Inventory</div>
-            <div class="uc-sub">
-              Upload your Store Inventory sheet as-is. <strong>All columns are preserved exactly.</strong><br><br>
-              Values are shown in their original currency. Use the "Convert → INR" toggle per currency in the Store tab to convert display values — nothing is changed in the database.
-            </div>
+            <div class="uc-sub">Upload your store inventory as-is. All columns are preserved exactly. Currency conversion available in the Store tab.</div>
             <div class="uc-ok" id="uc-inv-ok" style="display:none">✓ Loaded</div>
-            <div class="uc-ts" id="uc-inv-ts"></div>
+            <div style="font-size:10px;color:var(--g4);margin-top:4px" id="uc-inv-ts"></div>
           </div>
-
+          <div class="up-card" id="uc-proc" ondragover="ucDragOver(event,'proc')" ondragleave="ucDragLeave('proc')" ondrop="ucDrop(event,'proc')">
+            <input type="file" accept=".xlsx,.xls" onchange="ucSelect(event,'proc')">
+            <div class="uc-icon">🛒</div>
+            <div class="uc-title">Procurement Baseline</div>
+            <div class="uc-sub">
+              Upload procurement base data. Expected columns:<br>
+              <strong>Part Number · Supplier · Qty · UOM · Unit Rate · Currency · Country ·
+              Price@MOQ1000/3000/5000 · Currency/Country per MOQ tier</strong><br>
+              Existing rows will be merged. Procurement managers can further edit in the portal.
+            </div>
+            <div class="uc-ok" id="uc-proc-ok" style="display:none">✓ Loaded</div>
+            <div style="font-size:10px;color:var(--g4);margin-top:4px" id="uc-proc-ts"></div>
+          </div>
         </div>
-
         <div class="adm-note">
-          <h5>Notes</h5>
+          <h5>Format Notes</h5>
           <ul>
-            <li>BOM Tab 1: Every unique part with its full data. This is the master source.</li>
-            <li>BOM Tabs 2+: Each tab = one sub-assembly. Rows just need a Part Number column. The portal reads which parts appear in which sub-assembly tabs and shows them in an expandable view on each part row.</li>
-            <li>Store: Upload exactly as exported from your system. All columns are shown as-is.</li>
-            <li>Store: Currency values stay in their original currency. Toggle "Convert → INR" in the Store tab for on-screen conversion only — nothing is written back to the database.</li>
-            <li>Part Numbers in BOM Tab 1 must match exactly with Store Inventory for cross-referencing.</li>
+            <li>BOM Tab 1: Every unique part with full cost data. This is the master source.</li>
+            <li>BOM Tabs 2+: Each tab = one sub-assembly. Rows need a Part Number column.</li>
+            <li>Procurement: The uploaded file seeds the base data. Editors with Procurement access can then edit and add MOQ pricing directly in the portal.</li>
+            <li>Part Numbers must match exactly across all three sheets for cross-referencing.</li>
           </ul>
         </div>
-
         <div class="prog-wrap" id="prog-wrap">
           <div class="prog-label" id="prog-label">Processing…</div>
           <div class="prog-bar"><div class="prog-fill"></div></div>
+        </div>
+      </div>
+
+      <!-- User Management -->
+      <div class="adm-sec" id="adm-users-sec">
+        <div class="adm-sec-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          User Management <span class="adm-badge">Admin only</span>
+        </div>
+        <button class="btn-s btn-out" onclick="adminLoadUsers()" style="margin-bottom:12px">↺ Load Users</button>
+        <div id="adm-users-area">
+          <p style="font-size:12px;color:var(--g4)">Click "Load Users" to view and manage user roles.</p>
         </div>
       </div>
 
@@ -407,17 +794,192 @@ select,input{font-family:inherit}
 
 <div class="toast" id="toast"></div>
 
-<!-- Scripts: XLSX first, then db, upload, app in order -->
+<!-- Scripts: load order matters -->
 <script src="js/xlsx.min.js"></script>
 <script>
-  if(typeof XLSX==='undefined'){
-    var _xs=document.createElement('script');
-    _xs.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  if (typeof XLSX === 'undefined') {
+    var _xs = document.createElement('script');
+    _xs.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
     document.head.appendChild(_xs);
   }
 </script>
+<script src="js/config.js"></script><!-- defines SUPABASE_URL, SUPABASE_KEY -->
 <script src="js/db.js"></script>
+<script src="js/auth.js"></script>
 <script src="js/upload.js"></script>
+<script src="js/procurement.js"></script>
 <script src="js/app.js"></script>
+<script>
+/* ── Bootstrap ── */
+document.addEventListener('DOMContentLoaded', async function () {
+  renderAuthScreen('login');
+  /* Try to restore existing session */
+  var restored = await Auth.restoreSession();
+  if (restored) {
+    _bootApp();
+  }
+});
+
+/* ── Tab switching ── */
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
+  document.querySelectorAll('.nav-tab').forEach(function (b) { b.classList.remove('active'); });
+  document.getElementById('panel-' + name).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'proc') Proc.render();
+}
+
+/* ── Admin: load/render users with tab-permission checkboxes ── */
+async function adminLoadUsers() {
+  var area = document.getElementById('adm-users-area');
+  area.innerHTML = '<p style="font-size:12px;color:var(--g4)">Loading…</p>';
+  try {
+    var users = await Auth.listUsers();
+    if (!users.length) { area.innerHTML = '<p style="font-size:12px;color:var(--g4)">No users found.</p>'; return; }
+
+    var rows = users.map(function (u) {
+      var r    = u.role || 'viewer';
+      var perms = u.tab_permissions || [];
+      var hasAll = perms.includes('all');
+
+      /* Permission checkboxes — only shown/active for editor role */
+      var permHtml =
+        '<div class="perm-wrap" id="pw-'+u.user_id+'">' +
+          '<label class="perm-row perm-all-row">' +
+            '<input type="checkbox" id="pa-'+u.user_id+'" '+(hasAll?'checked':'')+' onchange="toggleAllPerm(\''+u.user_id+'\',this.checked)"> All Tabs' +
+          '</label>' +
+          '<label class="perm-row" id="pr-bom-'+u.user_id+'">' +
+            '<input type="checkbox" id="pb-'+u.user_id+'" '+(hasAll||perms.includes('bom')?'checked':'')+' '+(hasAll?'disabled':'')+'> BOM' +
+          '</label>' +
+          '<label class="perm-row" id="pr-store-'+u.user_id+'">' +
+            '<input type="checkbox" id="ps-'+u.user_id+'" '+(hasAll||perms.includes('store')?'checked':'')+' '+(hasAll?'disabled':'')+'> Store Inventory' +
+          '</label>' +
+          '<label class="perm-row" id="pr-proc-'+u.user_id+'">' +
+            '<input type="checkbox" id="pp-'+u.user_id+'" '+(hasAll||perms.includes('procurement')?'checked':'')+' '+(hasAll?'disabled':'')+'> Procurement' +
+          '</label>' +
+        '</div>';
+
+      return '<tr id="urow-'+u.user_id+'">' +
+        '<td><strong style="font-size:12px">'+_e(u.display_name||'—')+'</strong><div style="font-family:var(--FM);font-size:10px;color:var(--g4)">'+_e(u.email||'')+'</div></td>' +
+        '<td>' +
+          '<select class="role-sel" id="rs-'+u.user_id+'" onchange="onRoleChange(\''+u.user_id+'\',this.value)">' +
+            '<option value="viewer"'+(r==='viewer'?' selected':'')+'>Viewer</option>' +
+            '<option value="editor"'+(r==='editor'?' selected':'')+'>Editor</option>' +
+            '<option value="admin"' +(r==='admin' ?' selected':'')+'>Admin</option>' +
+          '</select>' +
+        '</td>' +
+        '<td id="pc-'+u.user_id+'" style="'+(r==='editor'?'':'opacity:.3;pointer-events:none')+'">' + permHtml + '</td>' +
+        '<td>' +
+          '<button class="save-role-btn" onclick="adminSaveUser(\''+u.user_id+'\')">Save</button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    area.innerHTML =
+      '<p style="font-size:11px;color:var(--g4);margin-bottom:10px">Tab Permissions are only applied to the <strong>Editor</strong> role. Admins always have full access. Viewers always have read-only.</p>' +
+      '<div style="overflow-x:auto"><table class="user-table">' +
+      '<thead><tr><th>User</th><th>Role</th><th>Tab Permissions (Editor only)</th><th></th></tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+      '</table></div>';
+  } catch (e) { area.innerHTML = '<p style="font-size:12px;color:var(--red)">Error: ' + e.message + '</p>'; }
+}
+
+/* Show/hide permission checkboxes based on selected role */
+function onRoleChange(userId, newRole) {
+  var pc = document.getElementById('pc-' + userId);
+  if (pc) { pc.style.opacity = newRole === 'editor' ? '1' : '.3'; pc.style.pointerEvents = newRole === 'editor' ? '' : 'none'; }
+}
+
+/* "All Tabs" master toggle */
+function toggleAllPerm(userId, checked) {
+  ['bom','store','proc'].forEach(function(k) {
+    var cb = document.getElementById('p' + k[0] + '-' + userId);
+    var lbl = document.getElementById('pr-' + (k==='proc'?'proc':k) + '-' + userId);
+    if (cb)  { cb.checked = checked; cb.disabled = checked; }
+    if (lbl) lbl.style.opacity = checked ? '.5' : '1';
+  });
+}
+
+async function adminSaveUser(userId) {
+  var roleSel = document.getElementById('rs-' + userId);
+  if (!roleSel) return;
+  var newRole = roleSel.value;
+
+  var perms = [];
+  if (newRole === 'editor') {
+    var allCb  = document.getElementById('pa-' + userId);
+    if (allCb && allCb.checked) {
+      perms = ['all'];
+    } else {
+      if (document.getElementById('pb-' + userId)?.checked) perms.push('bom');
+      if (document.getElementById('ps-' + userId)?.checked) perms.push('store');
+      if (document.getElementById('pp-' + userId)?.checked) perms.push('procurement');
+    }
+  }
+
+  try {
+    await Auth.updateUser(userId, newRole, perms);
+    /* Update the badge inline */
+    var row = document.getElementById('urow-' + userId);
+    if (row) {
+      var badge = row.querySelector('.role-badge');
+      if (badge) { badge.className = 'role-badge ' + newRole; badge.textContent = newRole.toUpperCase(); }
+    }
+    showToast('✓ Updated: ' + newRole + (perms.length ? ' · ' + perms.join(', ') : ''), 'success');
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+/* ── Update footer user info ── */
+function _updateFooter() {
+  var el = document.getElementById('footer-user-info');
+  if (!el) return;
+  var r  = Auth.role();
+  el.innerHTML =
+    '<div class="footer-user-name">' + _e(Auth.displayName()) + '</div>' +
+    '<div class="footer-user-role"><span class="role-badge ' + r + '">' + r.toUpperCase() + '</span></div>';
+  var fs = document.getElementById('footer-db-status');
+  if (fs) fs.textContent = document.getElementById('db-status-text').textContent || '—';
+}
+
+/* ── initMainApp (called by auth.js after login) ── */
+function initMainApp() {
+  _updateFooter();
+  _dbUI('yellow', 'Connecting…');
+  BomDB.open().then(function () {
+    return Promise.all([BomDB.getAll('bom_parts'), BomDB.getAll('store_inventory')]);
+  }).then(function (res) {
+    loadBomData(res[0]);
+    loadStoreData(res[1]);
+    Proc.load(res[0]);
+    _dbUI('green', 'connected · ' + res[0].length + ' parts · ' + res[1].length + ' store');
+    var fs = document.getElementById('footer-db-status');
+    if (fs) fs.textContent = 'Connected · ' + res[0].length + ' parts';
+    if (res[0].length || res[1].length)
+      showToast('✓ Welcome ' + Auth.displayName() + ' · ' + res[0].length + ' parts loaded', 'success');
+    else
+      _dbUI('green', 'connected — no data yet');
+  }).catch(function (err) {
+    _dbUI('', 'Error');
+    showToast('Database error: ' + err.message, 'error');
+  });
+
+  /* Admin: 5-click logo trigger (logo is in navbar) */
+  var logo = document.getElementById('nav-logo');
+  if (logo) {
+    var _lc = 0, _lt = null;
+    logo.addEventListener('click', function () {
+      if (!Auth.canAdmin()) return;
+      _lc++;
+      clearTimeout(_lt);
+      if (_lc >= 5) { _lc = 0; openAdmin(); return; }
+      _lt = setTimeout(function () { _lc = 0; }, 1600);
+      logo.classList.add('flash');
+      setTimeout(function () { logo.classList.remove('flash'); }, 220);
+    });
+  }
+}
+
+function _e(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
 </body>
 </html>

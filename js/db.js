@@ -1,18 +1,5 @@
-/**
- * db.js — Supabase client · On2Cook BOM Portal
- * Tables: bom_parts, store_inventory, bom_metadata
- */
 
-const SUPABASE_URL = 'https://nnsafrmrvgyargwtydup.supabase.co';  // ← replace
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5uc2Fmcm1ydmd5YXJnd3R5ZHVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4MjcyNDksImV4cCI6MjA4OTQwMzI0OX0.A6M-M6KB1NIe7L19tEfa1v55Ja4RHEUG0QLQxvWoWQM';              // ← replace
-/**
- * db.js — Supabase client · On2Cook BOM Portal
- *
- * BOM encoding in sno field:
- *   "TAB1QTY:<totalQty>|SAMAP:<jsonArray>|<realSno>"
- *   SAMAP = [{id:"SA-001",qty:10,sno:"1",finalized:"Yes"}, ...]
- *   This packs all SA breakdown data without needing extra schema columns.
- */
+    // ← replace
 
 function _H() {
   return { 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY };

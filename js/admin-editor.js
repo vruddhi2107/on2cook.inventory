@@ -2,7 +2,7 @@
  * admin-editor.js
  * Inline data editor for admin panel.
  * Allows viewing, editing, and deleting records directly from the browser.
- * Changes are saved to supabase immediately.
+ * Changes are saved toimmediately.
  */
 
 /* ═══════════════════════════════════════════════════════

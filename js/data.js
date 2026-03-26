@@ -1,7 +1,4 @@
-/**
- * data.js — Sample BOM data for the On2Cook Device BOM Portal
- * Replace this by uploading your actual Excel file.
- */
+
 
 /* ─── Sub-assembly definitions ─────────────────────────── */
 const SA_META = {

@@ -1,7 +1,3 @@
-/**
- * production.js — Production Planning tab
- * Uses: allParts (camelCase), allInventory (camelCase), allProduction (camelCase)
- */
 
 let _plan = [];
 

@@ -1,19 +1,3 @@
-/**
- * upload.js — File upload & Excel parsing · On2Cook BOM Portal
- *
- * BOM multi-sheet logic:
- *   Sheet[0] = Tab 1 — master unique-part rows (cost data lives here)
- *   Sheet[1+] = Sub-assembly tabs (e.g. "O2C-EC-SA-001")
- *              Each SA tab lists Part Numbers + their Qty in that SA.
- *              Column details (Desc, HSN, Type…) are merged into the master row.
- *
- *   After parsing, every master part gets:
- *     saBreakdown:   [{id, qty, sno, finalized}, …]  ← one entry per SA tab that contains this part
- *     subAssemblyId: comma-joined SA names            ← used by BOM filter dropdown
- *
- * Store:
- *   Single-sheet; all columns preserved verbatim → _rawRow / _rawHeaders.
- */
 
 /* ══════════════════════════════════════════════
    ADMIN OVERLAY
@@ -34,7 +18,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 });
 
-var _pinVal = '', _pinCorrect = '2580', _adminUnlocked = false;
+var _pinVal = '', _pinCorrect = '1234', _adminUnlocked = false;
 
 function openAdmin() {
   document.getElementById('admin-overlay').classList.add('open');
@@ -131,8 +115,9 @@ function _processFile(file, type) {
   reader.onload = function (e) {
     try {
       var wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
-      if (type === 'bom') _parseBom(wb);
-      if (type === 'inv') _parseInv(wb);
+      if (type === 'bom')  _parseBom(wb);
+      if (type === 'inv')  _parseInv(wb);
+      if (type === 'proc') _parseProc(wb);
     } catch (err) {
       _prog(false);
       showToast('Parse error: ' + err.message, 'error');
@@ -230,7 +215,7 @@ function _parseBom(wb) {
   var saCount = sheetNames.length - 1;
   _prog(true, 'Parsing ' + saCount + ' sub-assembly tab' + (saCount !== 1 ? 's' : '') + '…');
 
-  for (var si = 1; si < sheetNames.length-1; si++) {
+  for (var si = 1; si < sheetNames.length; si++) {
     var saName  = sheetNames[si].trim();   // e.g. "O2C-EC-SA-001"
     var saSheet = wb.Sheets[sheetNames[si]];
     var saRows  = XLSX.utils.sheet_to_json(saSheet, { defval: '' });
@@ -443,6 +428,82 @@ function _parseDays(lt) {
   var mw = lt.match(/([\d.]+)\s*(?:week|weeks|wk|w\b)/); if (mw) return parseFloat(mw[1]) * 7;
   var mm = lt.match(/([\d.]+)\s*(?:month|months|mo\b)/); if (mm) return parseFloat(mm[1]) * 30;
   return null;
+}
+
+/* ══════════════════════════════════════════════
+   PROCUREMENT BASELINE PARSER
+   Single-sheet upload to seed procurement_data.
+   All MOQ columns mapped. Existing rows merged.
+══════════════════════════════════════════════ */
+function _parseProc(wb) {
+  var sheetNames = wb.SheetNames;
+  if (!sheetNames.length) { showToast('Excel file appears empty', 'error'); _prog(false); return; }
+
+  _prog(true, 'Parsing Procurement Baseline…');
+  var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetNames[0]], { defval: '' });
+
+  if (!rows.length) { showToast('No data rows found in sheet', 'error'); _prog(false); return; }
+
+  var items = rows.map(function (row) {
+    var pn = String(_cv(row, ['part number','part_number','part no','partno','part#']) || '').trim();
+    if (!pn) return null;
+    return {
+      part_number:       pn,
+      supplier_name:     String(_cv(row, ['supplier name','supplier','vendor name','vendor']) || ''),
+      quantity:          _cn(row, ['quantity','qty','total qty']),
+      uom:               String(_cv(row, ['uom','unit','unit of measurement']) || 'PCS'),
+      unit_rate:         _cn(row, ['unit rate','rate','unitrate','unit price']),
+      total_rm_cost:     _cn(row, ['total rm cost','total rm cost for bom','rm cost','total cost']),
+      currency:          String(_cv(row, ['currency','curr','vendor currency']) || 'INR').trim().toUpperCase(),
+      country:           String(_cv(row, ['country','country of origin']) || ''),
+      /* MOQ 1000 */
+      price_moq_1000:    _cn(row, ['price at moq 1000','price@moq1000','moq 1000','moq1000 price']),
+      currency_moq_1000: String(_cv(row, ['currency for moq 1000','currency moq 1000','moq1000 currency']) || '').trim().toUpperCase() || 'INR',
+      country_moq_1000:  String(_cv(row, ['country for moq 1000','country moq 1000','moq1000 country']) || ''),
+      /* MOQ 3000 */
+      price_moq_3000:    _cn(row, ['price at moq 3000','price@moq3000','moq 3000','moq3000 price']),
+      currency_moq_3000: String(_cv(row, ['currency for moq 3000','currency moq 3000','moq3000 currency']) || '').trim().toUpperCase() || 'INR',
+      country_moq_3000:  String(_cv(row, ['country for moq 3000','country moq 3000','moq3000 country']) || ''),
+      /* MOQ 5000 */
+      price_moq_5000:    _cn(row, ['price at moq 5000','price@moq5000','moq 5000','moq5000 price']),
+      currency_moq_5000: String(_cv(row, ['currency for moq 5000','currency moq 5000','moq5000 currency']) || '').trim().toUpperCase() || 'INR',
+      country_moq_5000:  String(_cv(row, ['country for moq 5000','country moq 5000','moq5000 country']) || ''),
+      updated_at:        new Date().toISOString(),
+    };
+  }).filter(Boolean);
+
+  if (!items.length) { showToast('No valid rows found — ensure sheet has a "Part Number" column', 'error'); _prog(false); return; }
+
+  _prog(true, 'Saving ' + items.length + ' procurement rows…');
+
+  /* Always merge (never wipe procurement data — admins seed, editors enrich) */
+  _procUpsertAll(items).then(function () {
+    /* Reload in Proc module if it's available */
+    if (typeof Proc !== 'undefined' && typeof allBom !== 'undefined') Proc.load(allBom);
+    _ucOk('proc', items.length + ' rows · ' + sheetNames[0]);
+    showToast('✓ Procurement baseline uploaded: ' + items.length + ' rows', 'success');
+    BomDB.setMeta('proc_uploaded_at', new Date().toISOString());
+    adminRefreshStats();
+    _prog(false);
+  }).catch(function (err) {
+    showToast('DB save error: ' + err.message, 'error');
+    _prog(false);
+  });
+}
+
+async function _procUpsertAll(items) {
+  function _H() {
+    return { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + (window._authToken || SUPABASE_KEY) };
+  }
+  var BATCH = 400;
+  for (var i = 0; i < items.length; i += BATCH) {
+    var res = await fetch(SUPABASE_URL + '/rest/v1/procurement_data', {
+      method: 'POST',
+      headers: Object.assign({}, _H(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify(items.slice(i, i + BATCH))
+    });
+    if (!res.ok) throw new Error('Procurement upsert error: ' + await res.text());
+  }
 }
 
 /* ══════════════════════════════════════════════
