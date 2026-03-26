@@ -1,3 +1,5 @@
+const SUPABASE_URL = 'https://nnsafrmrvgyargwtydup.supabase.co';  // ← replace
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5uc2Fmcm1ydmd5YXJnd3R5ZHVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4MjcyNDksImV4cCI6MjA4OTQwMzI0OX0.A6M-M6KB1NIe7L19tEfa1v55Ja4RHEUG0QLQxvWoWQM';          
 
 function _H() {
   return { 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY };
