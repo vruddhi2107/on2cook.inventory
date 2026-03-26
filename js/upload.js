@@ -2,6 +2,8 @@
 /* ══════════════════════════════════════════════
    ADMIN OVERLAY
 ══════════════════════════════════════════════ */
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
+
 var _logoClicks = 0, _logoTimer = null;
 
 document.addEventListener('DOMContentLoaded', function () {

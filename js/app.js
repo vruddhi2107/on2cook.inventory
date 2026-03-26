@@ -2,6 +2,7 @@
  * app.js — On2Cook BOM Portal · Role-aware rendering
  * Roles: viewer (read-only) | editor (edit data) | admin (full)
  */
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
 var allBom       = [];
 var allStore     = [];
@@ -12,8 +13,8 @@ var bomTypeFilter= '';
 var bomUrgFilter = '';
 var bomSortKey   = 'partNumber';
 var bomSortDir   = 'asc';
-storeSortKey = '';
-storeSortDir = 'asc';
+storeSort = '';
+storeSort = 'asc';
 var storeSearch       = '';
 var storeCurrFilter   = '';   // filter by currency code
 var storeCntryFilter  = '';   // filter by country
@@ -116,8 +117,8 @@ function bomSort(key) {
 
 function storeSort(key) {
   // Toggle direction if same key, else default to asc
-  storeSortDir = (storeSortKey === key) ? (storeSortDir === 'asc' ? 'desc' : 'asc') : 'asc';
-  storeSortKey = key;
+  storeSort = (storeSort === key) ? (storeSort === 'asc' ? 'desc' : 'asc') : 'asc';
+  storeSort = key;
 
   allStore.sort(function(a, b) {
     // Get values from the rawRow or the processed properties
@@ -128,14 +129,14 @@ function storeSort(key) {
     var an = parseFloat(av);
     var bn = parseFloat(bv);
     if (!isNaN(an) && !isNaN(bn)) {
-       return storeSortDir === 'asc' ? an - bn : bn - an;
+       return storeSort === 'asc' ? an - bn : bn - an;
     }
 
     // Handle String sorting
     av = String(av).toLowerCase();
     bv = String(bv).toLowerCase();
-    if (av < bv) return storeSortDir === 'asc' ? -1 : 1;
-    if (av > bv) return storeSortDir === 'asc' ? 1 : -1;
+    if (av < bv) return storeSort === 'asc' ? -1 : 1;
+    if (av > bv) return storeSort === 'asc' ? 1 : -1;
     return 0;
   });
 
