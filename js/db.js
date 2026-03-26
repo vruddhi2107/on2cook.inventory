@@ -1,6 +1,5 @@
 
-    // ← replace
-
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 function _H() {
   return { 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY };
 }
